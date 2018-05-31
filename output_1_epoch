@@ -1,0 +1,21 @@
+Epoch   1/1 Batch    0/918 - Loss:  0.089, Seconds: 694.23
+Epoch   1/1 Batch  100/918 - Loss:  3.223, Seconds: 693.04
+Epoch   1/1 Batch  200/918 - Loss:  2.287, Seconds: 706.08
+Epoch   1/1 Batch  300/918 - Loss:  2.208, Seconds: 762.07
+Epoch   1/1 Batch  400/918 - Loss:  2.124, Seconds: 738.39
+Valid Loss:  2.068, Seconds: 311.11
+New Record!
+Epoch   1/1 Batch  500/918 - Loss:  2.095, Seconds: 778.82
+Epoch   1/1 Batch  600/918 - Loss:  2.110, Seconds: 1752.16
+Epoch   1/1 Batch  700/918 - Loss:  2.092, Seconds: 1888.18
+Epoch   1/1 Batch  800/918 - Loss:  2.075, Seconds: 1849.43
+Epoch   1/1 Batch  900/918 - Loss:  2.037, Seconds: 2122.54
+Valid Loss:  2.048, Seconds: 597.67
+New Record!
+Question
+  Word Ids:      [6094, 5021, 4497, 2029, 4262]
+  Input Words: ['if', 'he', 'wants', 'to', 'go']
+
+Answer
+  Word Ids:      [7301, 7627, 3699, 5852, 6417, 8094]
+  Response Words: ['i', 'do', 'not', 'know', 'that', '<EOS>']

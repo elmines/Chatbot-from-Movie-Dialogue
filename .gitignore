@@ -1,0 +1,12 @@
+#Extraneous files from the cornell dataset
+__MACOSX/
+
+#Jupyter files
+.ipynb_checkpoints/
+
+#Data files (though not the .zip archives)
+*.txt
+
+#Tensorflow checkpoint files
+checkpoint
+*ckpt*

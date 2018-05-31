@@ -9,7 +9,7 @@
 # 
 # With a larger amount of data, it would be more practical to keep features, such as punctuation. However, I am using FloydHub's GPU services and I don't want to get carried away with too training for too long.
 
-# In[1]:
+print("# In[1]:")
 
 import pandas as pd
 import numpy as np
@@ -23,6 +23,7 @@ tf.__version__
 
 # ### Inspect and Load the Data
 
+print("# In[2]:")
 # In[2]:
 
 # Load the data
@@ -30,18 +31,21 @@ lines = open('movie_lines.txt', encoding='utf-8', errors='ignore').read().split(
 conv_lines = open('movie_conversations.txt', encoding='utf-8', errors='ignore').read().split('\n')
 
 
+print("# In[3]:")
 # In[3]:
 
 # The sentences that we will be using to train our model.
 lines[:10]
 
 
+print("# In[4]:")
 # In[4]:
 
 # The sentences' ids, which will be processed to become our input and target data.
 conv_lines[:10]
 
 
+print("# In[5]:")
 # In[5]:
 
 # Create a dictionary to map each line's id with its text
@@ -52,6 +56,7 @@ for line in lines:
         id2line[_line[0]] = _line[4]
 
 
+print("# In[6]:")
 # In[6]:
 
 # Create a list of all of the conversations' lines' ids.
@@ -61,11 +66,13 @@ for line in conv_lines[:-1]:
     convs.append(_line.split(','))
 
 
+print("# In[7]:")
 # In[7]:
 
 convs[:10]
 
 
+print("# In[8]:")
 # In[8]:
 
 # Sort the sentences into questions (inputs) and answers (targets)
@@ -78,6 +85,7 @@ for conv in convs:
         answers.append(id2line[conv[i+1]])
 
 
+print("# In[9]:")
 # In[9]:
 
 # Check if we have loaded the data correctly
@@ -88,6 +96,7 @@ for i in range(limit, limit+5):
     print()
 
 
+print("# In[10]:")
 # In[10]:
 
 # Compare lengths of questions and answers
@@ -95,6 +104,7 @@ print(len(questions))
 print(len(answers))
 
 
+print("# In[11]:")
 # In[11]:
 
 def clean_text(text):
@@ -126,6 +136,7 @@ def clean_text(text):
     return text
 
 
+print("# In[12]:")
 # In[12]:
 
 # Clean the data
@@ -138,6 +149,7 @@ for answer in answers:
     clean_answers.append(clean_text(answer))
 
 
+print("# In[13]:")
 # In[13]:
 
 # Take a look at some of the data to ensure that it has been cleaned well.
@@ -148,6 +160,7 @@ for i in range(limit, limit+5):
     print()
 
 
+print("# In[14]:")
 # In[14]:
 
 # Find the length of sentences
@@ -161,11 +174,13 @@ for answer in clean_answers:
 lengths = pd.DataFrame(lengths, columns=['counts'])
 
 
+print("# In[15]:")
 # In[15]:
 
 lengths.describe()
 
 
+print("# In[16]:")
 # In[16]:
 
 print(np.percentile(lengths, 80))
@@ -175,6 +190,7 @@ print(np.percentile(lengths, 95))
 print(np.percentile(lengths, 99))
 
 
+print("# In[17]:")
 # In[17]:
 
 # Remove questions and answers that are shorter than 2 words and longer than 20 words.
@@ -204,6 +220,7 @@ for answer in short_answers_temp:
     i += 1
 
 
+print("# In[18]:")
 # In[18]:
 
 # Compare the number of lines we will use with the total number of lines.
@@ -212,6 +229,7 @@ print("# of answers:", len(short_answers))
 print("% of data used: {}%".format(round(len(short_questions)/len(questions),4)*100))
 
 
+print("# In[19]:")
 # In[19]:
 
 # Create a dictionary for the frequency of the vocabulary
@@ -231,6 +249,7 @@ for answer in short_answers:
             vocab[word] += 1
 
 
+print("# In[20]:")
 # In[20]:
 
 # Remove rare words from the vocabulary.
@@ -243,12 +262,14 @@ for k,v in vocab.items():
         count += 1
 
 
+print("# In[21]:")
 # In[21]:
 
 print("Size of total vocab:", len(vocab))
 print("Size of vocab we will use:", count)
 
 
+print("# In[22]:")
 # In[22]:
 
 # In case we want to use a different vocabulary sizes for the source and target text, 
@@ -271,6 +292,7 @@ for word, count in vocab.items():
         word_num += 1
 
 
+print("# In[23]:")
 # In[23]:
 
 # Add the unique tokens to the vocabulary dictionaries.
@@ -283,6 +305,7 @@ for code in codes:
     answers_vocab_to_int[code] = len(answers_vocab_to_int)+1
 
 
+print("# In[24]:")
 # In[24]:
 
 # Create dictionaries to map the unique integers to their respective words.
@@ -291,6 +314,7 @@ questions_int_to_vocab = {v_i: v for v, v_i in questions_vocab_to_int.items()}
 answers_int_to_vocab = {v_i: v for v, v_i in answers_vocab_to_int.items()}
 
 
+print("# In[25]:")
 # In[25]:
 
 # Check the length of the dictionaries.
@@ -300,6 +324,7 @@ print(len(answers_vocab_to_int))
 print(len(answers_int_to_vocab))
 
 
+print("# In[26]:")
 # In[26]:
 
 # Add the end of sentence token to the end of every answer.
@@ -307,6 +332,7 @@ for i in range(len(short_answers)):
     short_answers[i] += ' <EOS>'
 
 
+print("# In[27]:")
 # In[27]:
 
 # Convert the text to integers. 
@@ -332,6 +358,7 @@ for answer in short_answers:
     answers_int.append(ints)
 
 
+print("# In[28]:")
 # In[28]:
 
 # Check the lengths
@@ -339,6 +366,7 @@ print(len(questions_int))
 print(len(answers_int))
 
 
+print("# In[29]:")
 # In[29]:
 
 # Calculate what percentage of all words have been replaced with <UNK>
@@ -364,6 +392,7 @@ print("Number of times <UNK> is used:", unk_count)
 print("Percent of words that are <UNK>: {}%".format(round(unk_ratio,3)))
 
 
+print("# In[30]:")
 # In[30]:
 
 # Sort questions and answers by the length of questions.
@@ -388,6 +417,7 @@ for i in range(3):
     print()
 
 
+print("# In[31]:")
 # In[31]:
 
 def model_inputs():
@@ -400,6 +430,7 @@ def model_inputs():
     return input_data, targets, lr, keep_prob
 
 
+print("# In[32]:")
 # In[32]:
 
 def process_encoding_input(target_data, vocab_to_int, batch_size):
@@ -410,6 +441,7 @@ def process_encoding_input(target_data, vocab_to_int, batch_size):
     return dec_input
 
 
+print("# In[33]:")
 # In[33]:
 
 def encoding_layer(rnn_inputs, rnn_size, num_layers, keep_prob, sequence_length):
@@ -425,6 +457,7 @@ def encoding_layer(rnn_inputs, rnn_size, num_layers, keep_prob, sequence_length)
     return enc_state
 
 
+print("# In[34]:")
 # In[34]:
 
 def decoding_layer_train(encoder_state, dec_cell, dec_embed_input, sequence_length, decoding_scope,
@@ -452,6 +485,7 @@ def decoding_layer_train(encoder_state, dec_cell, dec_embed_input, sequence_leng
     return output_fn(train_pred_drop)
 
 
+print("# In[35]:")
 # In[35]:
 
 def decoding_layer_infer(encoder_state, dec_cell, dec_embeddings, start_of_sequence_id, end_of_sequence_id,
@@ -483,6 +517,7 @@ def decoding_layer_infer(encoder_state, dec_cell, dec_embeddings, start_of_seque
     return infer_logits
 
 
+print("# In[36]:")
 # In[36]:
 
 def decoding_layer(dec_embed_input, dec_embeddings, encoder_state, vocab_size, sequence_length, rnn_size,
@@ -526,6 +561,7 @@ def decoding_layer(dec_embed_input, dec_embeddings, encoder_state, vocab_size, s
     return train_logits, infer_logits
 
 
+print("# In[37]:")
 # In[37]:
 
 def seq2seq_model(input_data, target_data, keep_prob, batch_size, sequence_length, answers_vocab_size, 
@@ -557,10 +593,13 @@ def seq2seq_model(input_data, target_data, keep_prob, batch_size, sequence_lengt
     return train_logits, infer_logits
 
 
+print("# In[38]:")
 # In[38]:
 
 # Set the Hyperparameters
 epochs = 100
+epochs = 1 #FIXME: Temporarily set to this by Ethan for shortening the computation
+
 batch_size = 128
 rnn_size = 512
 num_layers = 2
@@ -572,6 +611,7 @@ min_learning_rate = 0.0001
 keep_probability = 0.75
 
 
+print("# In[39]:")
 # In[39]:
 
 # Reset the graph to ensure that it is ready for training
@@ -611,6 +651,7 @@ with tf.name_scope("optimization"):
     train_op = optimizer.apply_gradients(capped_gradients)
 
 
+print("# In[40]:")
 # In[40]:
 
 def pad_sentence_batch(sentence_batch, vocab_to_int):
@@ -619,6 +660,7 @@ def pad_sentence_batch(sentence_batch, vocab_to_int):
     return [sentence + [vocab_to_int['<PAD>']] * (max_sentence - len(sentence)) for sentence in sentence_batch]
 
 
+print("# In[41]:")
 # In[41]:
 
 def batch_data(questions, answers, batch_size):
@@ -632,6 +674,7 @@ def batch_data(questions, answers, batch_size):
         yield pad_questions_batch, pad_answers_batch
 
 
+print("# In[42]:")
 # In[42]:
 
 # Validate the training with 10% of the data
@@ -648,6 +691,7 @@ print(len(train_questions))
 print(len(valid_questions))
 
 
+print("# In[43]:")
 # In[43]:
 
 display_step = 100 # Check training loss after every 100 batches
@@ -658,6 +702,11 @@ total_train_loss = 0 # Record the training loss for each display step
 summary_valid_loss = [] # Record the validation loss for saving improvements in the model
 
 checkpoint = "best_model.ckpt" 
+
+#FIXME: Added by Ethan to do more regular saves
+epoch_saver = tf.train.Saver()
+epoch_path = lambda epoch_num: "epoch{0}.ckpt".format(epoch_num)
+
 
 sess.run(tf.global_variables_initializer())
 
@@ -708,9 +757,18 @@ for epoch_i in range(1, epochs+1):
             if learning_rate < min_learning_rate:
                 learning_rate = min_learning_rate
 
+
+            #FIXME: Additional saves added by Ethan
+            epoch_checkpoint = epoch_path(epoch_i)
+            epoch_saver.save(sess, epoch_checkpoint)
+            print("ETHAN: Saving model after epoch", epoch_i, "to", epoch_checkpoint)
+            
+
             summary_valid_loss.append(avg_valid_loss)
             if avg_valid_loss <= min(summary_valid_loss):
                 print('New Record!') 
+                #FIXME: Additional debug statement added by Ethan
+                print("ETHAN: Saving new best model to", checkpoint)
                 stop_early = 0
                 saver = tf.train.Saver() 
                 saver.save(sess, checkpoint)
@@ -726,6 +784,7 @@ for epoch_i in range(1, epochs+1):
         break
 
 
+print("# In[44]:")
 # In[44]:
 
 def question_to_seq(question, vocab_to_int):
@@ -735,6 +794,7 @@ def question_to_seq(question, vocab_to_int):
     return [vocab_to_int.get(word, vocab_to_int['<UNK>']) for word in question.split()]
 
 
+print("# In[45]:")
 # In[60]:
 
 # Create your own input question
@@ -772,6 +832,4 @@ print('  Response Words: {}'.format([answers_int_to_vocab[i] for i in np.argmax(
 
 
 # In[ ]:
-
-
 
