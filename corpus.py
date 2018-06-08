@@ -135,15 +135,15 @@ class Corpus(object):
 		# Clean the data
 		clean_prompts = []
 		for prompt in prompts:
-	    		clean_prompts.append(Corpus._clean_sequence(prompt))
+	    		clean_prompts.append(Corpus.clean_sequence(prompt))
 		clean_answers = []    
 		for answer in answers:
-	    		clean_answers.append(Corpus._clean_sequence(answer))
+	    		clean_answers.append(Corpus.clean_sequence(answer))
 
 		return (clean_prompts, clean_answers)
 	
 	@staticmethod
-	def _clean_sequence(text):
+	def clean_sequence(text):
 		'''Clean text by removing unnecessary characters and altering the format of words.'''
 		text = text.lower()
 		text = re.sub(r"i'm", "i am", text)
