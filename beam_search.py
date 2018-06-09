@@ -1,4 +1,22 @@
 import tensorflow as tf
+import collections
+
+
+class CustomBeamSearchDecoderOutput(
+	collections.namedtuple("BeamSearchDecoderOutput",
+                           ("scores", "predicted_ids", "parent_ids"))):
+	pass
+
+class CustomBeamSearchDecoderState(
+	collections.namedtuple("BeamSearchDecoderState",
+                           ("cell_state", "log_probs", "augmented_probs", "finished", "lengths"))):
+
+	"""
+	augumented_probs - The log probabilities of the generated sequences, plus the additional custom term added by the user
+	"""
+	pass
+
+
 
 
 class CustomBeamSearchDecoder: #(tf.Decoder)
@@ -11,8 +29,9 @@ class CustomBeamSearchDecoder: #(tf.Decoder)
                         start_token,
                         end_token,
                         initial_state,
+			batch_size,
                         beam_width,
-                        output_fn,
+                        output_fn = None,
 			strength = 0.0 #Weight to be applied to the additional term
                         search_style=None):
 
@@ -22,29 +41,29 @@ class CustomBeamSearchDecoder: #(tf.Decoder)
 		start_token - Initial token to feed into decoder for each sample
         	end_token - Token that causes the decoder to stop for a beam
 		initial_state - Initial state of the decoder cell
+		batch_size - The number of samples in the batch
 		beam_width - Number of beams to maintain in decoding
-        	output_layer - A function (need not be a layer) to apply to RNN outputs
+        	output_fn - A function (need not be a layer) to apply to RNN outputs
         	search_style - FUTURE WORK: style of beam search to use (diverse, affectively diverse, etc.)
         	"""
-		self.cell = cell
-		self.embedding = embedding
-		self.start_tokens = start_tokens
-		self.beam_width = beam_width
-		self.output_layer = output_layer
-		self.search_style = search_style
+		self._cell = cell
+		self._embedding = embedding
 
-		self._batch_size = 256 #FIXME: Have the user pass this in as a parameter, or compute it from another input?
+		self._start_token = start_token
+		self._end_token = end_token
 
-                self.finished_beams = tf.Variable(0, tf.int32)
+		self._initial_cell_state = initial_state
 
-	def decode():
-		"""
-		Returns
-			outputs - A tensor of dimensions [batch_size, max_sequence_length, output_size]
-                        true_sequence_lengths - A tensor of dimensions [batch_size] describing the true lengths of the generated sequences
-		"""
+		self._beam_width = beam_width
+		self._output_fn = output_fn
+		self._search_style = search_style
 
-		return _, _
+		self._batch_size = batch_size #FIXME: Have the user pass this in as a parameter, or compute it from another input?
+
+                self._finished_beams = tf.zeros([self.batch_size, self.beam_width], dtype=tf.bool)
+
+		#The "zeros" are, expectedly, converted to `False` values
+		self._finished = tf.zeros(self.batch_size, dtype=tf.bool)
 
 		
 	@property
@@ -64,8 +83,31 @@ class CustomBeamSearchDecoder: #(tf.Decoder)
 		pass
 
 	def initialize(self, name=None):
-		pass
+		"""
+		Returns
+			finished - A tf.bool array of size [batch_size] denoting which samples are finished (obviously all `False` initially)
+			initial_inputs - The initial inputs to be fed into the decoder cell
+			initial_state - The state with which to initialize the decoder cell	
+		"""
+		with tf.name_scope(name):
+			#FIXME: Find another way to pass along the name without wasting memory using tf.identity? 
+			finished = tf.identity(self._finished)
+
+			initial_state = 
+
+			initial_inputs = None
+			initial_state = None
+
+		return (finished, initial_inputs, initial_state)
 
 	def step(self, time, inputs, state):
+
+		outputs = None
+		next_state = None
+		next_input = None
+		finished = None
+
+		return (outputs, next_state, next_input, finished)
+
 		pass
 
