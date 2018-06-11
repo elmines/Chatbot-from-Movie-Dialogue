@@ -17,24 +17,19 @@ class Corpus(object):
 	"""
 	A class for representing parallel corpora
 
-	`self.eos` - The end-of-sequence metatoken
-	`self.pad` - The padding metatoken
 	`self.unk` - The unknown word metatoken
-	`self.go` - The start-of-sequence metatoken
-	`self.metatokens` - The metatokens in the vocabulary, including but not limited to those above
 	`prompts` - A list of strings, each of which is a prompt from the corpus
 	`answers` - A list of strings, where answers[i] is the reply to prompts[i]
 	`prompts_int` - A list of integer lists, where each element is an integer that uniquely identifies a word
 	`answers_int` - A list of integer lists, where each element is an integer that uniquely identifes a word
 	`vocab` - A list of strings, including `metatokens`, each of which is a word in the vocabulary
 	`vocab2int` - A dictionary mapping from a word (string) to an integer (index)
-	`int2vocab` - A dictionary mapping from an integer (index) to a word (string)
 	"""
 
 
 	def __init__(self, lines_path, conversations_path,
 		max_vocab=_DEFAULT_MAX_WORDS, min_line_length=_DEFAULT_MIN_LINE_LENGTH, max_line_length=_DEFAULT_MAX_LINE_LENGTH,
-		pad = _DEFAULT_PAD, go = _DEFAULT_GO, eos = _DEFAULT_EOS, unk = _DEFAULT_UNK, extra_metatokens = []):
+		unk = _DEFAULT_UNK):
 
 		"""
 		`lines_path` - The path to the Cornell movie lines file
@@ -42,19 +37,9 @@ class Corpus(object):
 		`max_vocab` - The maximum vocabulary size
 		`min_line_length` - The minimum length of a prompt or answer
 		`max_line_length` - The maximum length of a prompt or answer
-		`pad` - The padding metatoken to be used
-		`go` - The start-of-sequence metatoken to be used
 		`unk` - The unknown word metatoken to be used (always the penultimate element in the vocabulary)
-		`eos` - The end-of-sequence metatoken to be used (always the last element in the vocabulary)
-		`extra_metatokens` - Additional metatokens to include in the vocabulary beyond those above
 		"""
 
-		self.pad = pad
-		self.go = go
-		self.unk = unk
-		self.eos = eos
-		#The ordering here matters-the comments promise to make unk and eos the last elements in the vocabulary
-		self.metatokens = extra_metatokens + [self.pad, self.go, self.unk, self.eos]
 	
 		with open(lines_path, "r", encoding="utf-8", errors="ignore") as r:
 			lines = r.read().split("\n")
@@ -66,19 +51,22 @@ class Corpus(object):
 		(clean_prompts, clean_answers) = Corpus._clean(prompts, answers)
 		(short_prompts, short_answers) = Corpus._filter_by_length(clean_prompts, clean_answers, min_line_length, max_line_length)
 
-		#self.metatokens must be appended on the end to guarantee unk and eos are at the end
-		self.vocab = Corpus._generate_vocab(short_prompts, short_answers, max_vocab) + self.metatokens
+		self.unk = unk
+		self.vocab = Corpus._generate_vocab(short_prompts, short_answers, max_vocab) + [self.unk]
 		self.vocab2int = { word:index for (index, word) in enumerate(self.vocab) }
-		self.int2vocab = { index:word for (word, index)  in self.vocab2int.items() }
+		self.int2vocab = { index:word for (word, index) in self.vocab2int.items() }
 	
-		# Add the end of sequence token to the end of every answer.
-		for i in range(len(short_answers)):
-	    		short_answers[i] += " " + self.eos
+		prompts_with_unk = Corpus._replace_unknowns(short_prompts, self.vocab2int, self.unk)
+		answers_with_unk = Corpus._replace_unknowns(short_answers, self.vocab2int, self.unk)
+		self.prompts = prompts_with_unk
+		self.answers = answers_with_unk
 
-		self.prompts = short_prompts
-		self.answers = short_answers
-		self.prompts_int = Corpus._encode(self.prompts, self.vocab2int, self.unk)
-		self.answers_int = Corpus._encode(self.answers, self.vocab2int, self.unk)
+		self.prompts_int = Corpus._encode(self.prompts, self.vocab2int)
+		self.answers_int = Corpus._encode(self.answers, self.vocab2int)
+
+	@staticmethod
+	def _replace_unknowns(sequences, vocab, unk):
+		return [ " ".join([word if word in vocab else unk for word in sequence.split()]) for sequence in sequences ]
 
 	def write_prompts(self, path):
 		"""
@@ -210,19 +198,20 @@ class Corpus(object):
 		return vocab
 
 	@staticmethod
-	def _encode(sequences, vocab2int, unk):
+	def _encode(sequences, vocab2int):
 		# Convert the text to integers. 
 		# Replace any words that are not in the respective vocabulary with <UNK> 
+		return [ [vocab2int[word] for word in sequence.split()] for sequence in sequences]
+
+		"""
 		sequences_int = []
 		for sequence in sequences:
 	    		ints = []
 	    		for word in sequence.split():
-	        		if word not in vocab2int:
-	            			ints.append(vocab2int[unk])
-	        		else:
-	            			ints.append(vocab2int[word])
+				ints.append(vocab2int[word])
 	    		sequences_int.append(ints)
 		return sequences_int
+		"""
 
 	@staticmethod
 	def _write_lines(path, lines):
