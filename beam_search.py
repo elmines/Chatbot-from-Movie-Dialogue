@@ -31,6 +31,7 @@ class CustomBeamSearchDecoder: #(tf.Decoder)
                         initial_state,
 			batch_size,
                         beam_width,
+			num_groups,
                         output_fn = None,
 			strength = 0.0 #Weight to be applied to the additional term
                         search_style=None):
@@ -55,6 +56,11 @@ class CustomBeamSearchDecoder: #(tf.Decoder)
 		self._initial_cell_state = initial_state
 
 		self._beam_width = beam_width
+		self._num_groups = num_groups
+		if self._beam_width % self._num_groups != 0:
+			raise ValueError("beam_width must be a multiple of num_groups")
+		self._group_size = self._beam_width // self._num_groups
+		
 		self._output_fn = output_fn
 		self._search_style = search_style
 
@@ -110,4 +116,8 @@ class CustomBeamSearchDecoder: #(tf.Decoder)
 		return (outputs, next_state, next_input, finished)
 
 		pass
+
+	def top_k(self, groups):
+		"""
+		groups - tensor of 
 
