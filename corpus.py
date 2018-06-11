@@ -17,7 +17,7 @@ class Corpus(object):
 	"""
 	A class for representing parallel corpora
 
-	`self.unk` - The unknown word metatoken
+	`self.unk` - The unknown word token
 	`prompts` - A list of strings, each of which is a prompt from the corpus
 	`answers` - A list of strings, where answers[i] is the reply to prompts[i]
 	`prompts_int` - A list of integer lists, where each element is an integer that uniquely identifies a word
@@ -37,7 +37,7 @@ class Corpus(object):
 		`max_vocab` - The maximum vocabulary size
 		`min_line_length` - The minimum length of a prompt or answer
 		`max_line_length` - The maximum length of a prompt or answer
-		`unk` - The unknown word metatoken to be used (always the penultimate element in the vocabulary)
+		`unk` - The unknown word token to be used (always the last element in the vocabulary)
 		"""
 
 	
@@ -64,9 +64,6 @@ class Corpus(object):
 		self.prompts_int = Corpus._encode(self.prompts, self.vocab2int)
 		self.answers_int = Corpus._encode(self.answers, self.vocab2int)
 
-	@staticmethod
-	def _replace_unknowns(sequences, vocab, unk):
-		return [ " ".join([word if word in vocab else unk for word in sequence.split()]) for sequence in sequences ]
 
 	def write_prompts(self, path):
 		"""
@@ -196,6 +193,10 @@ class Corpus(object):
 		else:
 			vocab = sorted_by_freq[:max_vocab]
 		return vocab
+
+	@staticmethod
+	def _replace_unknowns(sequences, vocab, unk):
+		return [ " ".join([word if word in vocab else unk for word in sequence.split()]) for sequence in sequences ]
 
 	@staticmethod
 	def _encode(sequences, vocab2int):
