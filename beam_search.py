@@ -4,11 +4,19 @@ import collections
 
 class DiverseBeamSearchDecoderOutput(collections.namedtuple("DiverseBeamSearchDecoderOutput",
                            ("scores", #output of an RNN cell
-				#,"predicted_ids",
-				#"parent_ids"
+			    "predicted_ids" #The IDS just predicted
+			    "parent_ids"
 			   )
 							   )
 											):
+
+	"""
+	Args:
+		scores - output of an RNN cell (Tensor of dimensions [batch_size, num_groups, group_size, ...]
+		predicted_ids - The IDs just predicted (Tensor of dimensions [batch_size, num_groups, group_size])
+		parent_ids - The IDs already predicted (Tensor of dimensions [batch_size, num_groups, group_size, num_time_steps])
+	"""
+		
 	pass
 
 class DiverseBeamSearchDecoderState(
@@ -16,7 +24,10 @@ class DiverseBeamSearchDecoderState(
                            ("cell_state", "log_probs", "augmented_probs", "finished", "lengths"))):
 
 	"""
-	augumented_probs - The log probabilities of the generated sequences, plus the diversity term 
+	cell_state - The state of the decoder cell (Tensor of dimensions [batch_size, num_groups, group_size, ...]
+	log_probs - The log probabilities of the generated sequences (Tensor of dimensions [batch_size, num_groups, group_size]
+	augumented_probs - The log probabilities of the generated sequences, plus the diversity term (Tensor of dimensions [batch_size, num_groups, group_size]
+	finished - The state of all the beams as being finished or not (boolean Tensor of dimensions [batch_size, num_groups, group_size]
 	"""
 	pass
 
@@ -26,7 +37,7 @@ def cos_sim(word_a, word_b):
 
 
 
-class DiverseBeamSearchDecoder: #(tf.Decoder)
+class DiverseBeamSearchDecoder(tf.contrib.seq2seq.Decoder):
 	"""
 	Allows the addition of an additional term to the beam search optimization equation
         """
@@ -110,9 +121,9 @@ class DiverseBeamSearchDecoder: #(tf.Decoder)
 		Based on implementation in tf.contrib.seq2seq.BeamSearchDecoder
 		"""
 		return DiverseBeamSearchDecoderOutput(
-							scores = tf.TensorShape([self._num_groups, self._group_size])
-							#,predicted_ids = tf.TensorShape([self._num_groups, self._group_size]),
-							#parent_ids = tf.TensorShape([self._num_groups, self._group_size])
+							scores = tf.TensorShape([self._num_groups, self._group_size]),
+							predicted_ids = tf.TensorShape([self._num_groups, self._group_size]),
+							parent_ids = tf.TensorShape([self._num_groups, self._group_size])    #FIXME: Why didn't the original BeamSearchDecoder include something like max_time_step (or None)?
 						)
 	@property
 	def output_dtype(self):
@@ -122,10 +133,8 @@ class DiverseBeamSearchDecoder: #(tf.Decoder)
 		#We do make somewhat of an assumption here, as in fact the output type could be different after applying the output layer
 		dtype = tf.contrib.framework.nest.flatten(self._initial_cell_state)[0].dtype 
 
-		return DiverseBeamSearchDecoderOutput(
-							scores = tf.contrib.framework.nest.map_structure(lambda _: dtype, self._rnn_output_size())
-							#,predicted_ids = tf.int32,
-							#parent_ids = tf.int32
+		return DiverseBeamSearchDecoderOutput(scores = tf.contrib.framework.nest.map_structure(lambda _: dtype, self._rnn_output_size())
+							predicted_ids = tf.int32, parent_ids = tf.int32
 						)
 
 	def initialize(self, name=None):
@@ -143,13 +152,11 @@ class DiverseBeamSearchDecoder: #(tf.Decoder)
 
 			initial_cell_state = tf.reshape( tf.tile_batch(self._initial_cell_state, beam_width), [self._batch_size, self._num_groups, self._group_size, -1] )
 
-			initial_log_probs = tf.fill([self._batch_size, self._num_groups, self._group_size], -np.Inf)
-			initial_augmented_probs = initial_log_probs
+			initial_augmented_probs = tf.fill([self._batch_size, self._num_groups, self._group_size], -np.Inf)
 			initial_finished = self._finished_beams
 			initial_lengths = tf.zeros([self._batch_size, self._num_groups, self._group_size])
 
 			initial_state = DiverseBeamSearchDecoderState( cell_state=initial_cell_state,
-									log_probs = initial_log_probs,
 									augmented_probs = initial_augmented_probs,
 									finished = initial_finished,
 									lengths = initial_lengths
@@ -165,10 +172,17 @@ class DiverseBeamSearchDecoder: #(tf.Decoder)
 		"""
 
 		batch_size = self._batch_size
-		beam_width = self._beam_width
+		num_groups = self._num_groups
+		group_size = self._group_size
 		end_token = self._end_token
 
-		cell_state = state.cell_state #Access cell_state from the named tuple
+		#Tensor of shape [batch_size, num_groups, group_size, ...]
+		#Access cell_state from the named tuple
+		state = state.cell_state 
+
+		logits = tf.contrib.framework.nest.map_structure(lambda cell_inputs, cell_state: self._cell(cell_inputs, cell_state), inputs, state)
+
+		#logits - Tensor of dimensiosn [batch_size, num_groups, group_size, num_output_classes]
 
 
 
