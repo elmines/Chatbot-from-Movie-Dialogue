@@ -2,12 +2,12 @@ import tensorflow as tf
 import collections
 
 
-class CustomBeamSearchDecoderOutput(
+class DiverseBeamSearchDecoderOutput(
 	collections.namedtuple("BeamSearchDecoderOutput",
                            ("scores", "predicted_ids", "parent_ids"))):
 	pass
 
-class CustomBeamSearchDecoderState(
+class DiverseBeamSearchDecoderState(
 	collections.namedtuple("BeamSearchDecoderState",
                            ("cell_state", "log_probs", "augmented_probs", "finished", "lengths"))):
 
@@ -19,7 +19,7 @@ class CustomBeamSearchDecoderState(
 
 
 
-class CustomBeamSearchDecoder: #(tf.Decoder)
+class DiverseBeamSearchDecoder: #(tf.Decoder)
 	"""
 	Allows the addition of an additional term to the beam search optimization equation
         """
@@ -71,6 +71,30 @@ class CustomBeamSearchDecoder: #(tf.Decoder)
 		#The "zeros" are, expectedly, converted to `False` values
 		self._finished = tf.zeros(self.batch_size, dtype=tf.bool)
 
+	def step(self, time, inputs, state):
+		"""
+		time - a scalar indicating the current time step
+		inputs - Tensor of dimensions [batch_size, num_groups, group_size]
+		state - Tensor (or someother collection?) of dimensions [batch_size, num_groups, group_size] where each element is a DiverseBeamDecoderState object
+		"""
+
+		batch_size = self._batch_size
+		beam_width = self._beam_width
+		end_token = self._end_token
+
+		cell_state = state.cell_state #Access cell_state from the named tuple
+
+
+
+		outputs = None
+		next_state = None
+		next_input = None
+		finished = None
+
+		return (outputs, next_state, next_input, finished)
+
+		pass
+
 		
 	@property
 	def batch_size(self):
@@ -86,38 +110,45 @@ class CustomBeamSearchDecoder: #(tf.Decoder)
 	
 
 	def finalize(self, outputs, final_state, sequence_lengths, name=None):
+		"""
+		outputs - A Tensor of dimensions [batch_size, num_groups, group_size, max_time_step]
+		final_state - A Tensor of dimensions [batch_size, num_groups, group_size]
+		sequence_lengths - A Tensor of dimensions [batch_size, num_groups, group_size]
+		"""
 		pass
 
 	def initialize(self, name=None):
 		"""
 		Returns
 			finished - A tf.bool array of size [batch_size] denoting which samples are finished (obviously all `False` initially)
-			initial_inputs - The initial inputs to be fed into the decoder cell
+			initial_inputs - The initial inputs to be fed into the decoder cell (Tensor of dimensions [batch_size, num_groups, group_size])
 			initial_state - The state with which to initialize the decoder cell	
 		"""
 		with tf.name_scope(name):
 			#FIXME: Find another way to pass along the name without wasting memory using tf.identity? 
 			finished = tf.identity(self._finished)
 
-			initial_state = 
 
 			initial_inputs = None
 			initial_state = None
 
 		return (finished, initial_inputs, initial_state)
 
-	def step(self, time, inputs, state):
+	def _beam_scores(self, beams):
+		"""
+		beams - Tensor of dimensions [batch_size, num_groups, group_size, latest_time_step]
 
-		outputs = None
-		next_state = None
-		next_input = None
-		finished = None
+		Returns
+			scores - Tensor of dimensions [batch_size, num_groups, group_size]
+		"""
 
-		return (outputs, next_state, next_input, finished)
+		return None
 
-		pass
 
 	def top_k(self, groups):
 		"""
-		groups - tensor of 
+		groups - tensor of dimensions [batch_size, num_groups, group_size, latest_time_step]
+		"""
+
+		
 
