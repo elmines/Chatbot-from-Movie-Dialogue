@@ -2,17 +2,13 @@ import tensorflow as tf
 import collections
 
 
-#class DiverseBeamSearchDecoderOutput(
-	#collections.namedtuple("DiverseBeamSearchDecoderOutput",
-                           #("scores", "predicted_ids", "parent_ids"))):
-	#"""
-	#scores - output of an RNN Cell
-	#"""
-	#pass
-
-class DiverseBeamSearchDecoderOutput(
-	collections.namedtuple("DiverseBeamSearchDecoderOutput",
-                           ("scores"))):
+class DiverseBeamSearchDecoderOutput(collections.namedtuple("DiverseBeamSearchDecoderOutput",
+                           ("scores", #output of an RNN cell
+				#,"predicted_ids",
+				#"parent_ids"
+			   )
+							   )
+											):
 	pass
 
 class DiverseBeamSearchDecoderState(
@@ -96,20 +92,17 @@ class DiverseBeamSearchDecoder: #(tf.Decoder)
 		#The "zeros" are, expectedly, converted to `False` values
 		self._finished = tf.zeros(self.batch_size, dtype=tf.bool)
 
-	def _rnn_output_size(self):
+	@property
+	def batch_size(self):
+		return self._batch_size
+
+	@property
+	def tracks_own_finished_state():
 		"""
-		Based on implementation in tf.contrib.seq2seq.BeamSearchDecoder
+		Like tf.contrib.seq2seq.BeamSearchDecoder, our decoder's shuffling of beams will confuse tf.contrib.seq2seq.dynamic_decode
+		Returns `True`
 		"""
-		size = self._cell.output_size
-		if not self._output_layer: return size
-
-		output_shape_with_unknown_batch = tf.contrib.framework.nest.map_structure(lambda s: tf.TensorShape([None]).concatenate(s), size)
-
-		#Apparently we need that extra dimension for the sole purpose of calling compute_output_shape . . .
-		layer_output_shape = self._output_layer.compute_output_shape(output_shapw_with_unknown_batch)
-
-		#. . . since we just discard it right here
-		return tf.contrib.framework.nest.map_structure(lambda s: s[1:], layer_output_shape)
+		return True
 
 	@property
 	def output_size(self):
@@ -148,8 +141,19 @@ class DiverseBeamSearchDecoder: #(tf.Decoder)
 
 			initial_inputs = tf.fill([self._batch_size, self._num_groups, self._group_size], self._start_token)
 
+			initial_cell_state = tf.reshape( tf.tile_batch(self._initial_cell_state, beam_width), [self._batch_size, self._num_groups, self._group_size, -1] )
 
-			initial_state = tf.tile( self._start_token, [self._batch_size, self._num_gropus, self._group_size] )
+			initial_log_probs = tf.fill([self._batch_size, self._num_groups, self._group_size], -np.Inf)
+			initial_augmented_probs = initial_log_probs
+			initial_finished = self._finished_beams
+			initial_lengths = tf.zeros([self._batch_size, self._num_groups, self._group_size])
+
+			initial_state = DiverseBeamSearchDecoderState( cell_state=initial_cell_state,
+									log_probs = initial_log_probs,
+									augmented_probs = initial_augmented_probs,
+									finished = initial_finished,
+									lengths = initial_lengths
+								)
 
 		return (finished, initial_inputs, initial_state)
 
@@ -186,19 +190,22 @@ class DiverseBeamSearchDecoder: #(tf.Decoder)
 		pass
 
 		
-	@property
-	def batch_size(self):
-		return self._batch_size
-
-	@property
-	def tracks_own_finished_state():
-		"""
-		Like tf.contrib.seq2seq.BeamSearchDecoder, our decoder's shuffling of beams will confuse tf.contrib.seq2seq.dynamic_decode
-		Returns `True`
-		"""
-		return True
 	
 
+	def _rnn_output_size(self):
+		"""
+		Based on implementation in tf.contrib.seq2seq.BeamSearchDecoder
+		"""
+		size = self._cell.output_size
+		if not self._output_layer: return size
+
+		output_shape_with_unknown_batch = tf.contrib.framework.nest.map_structure(lambda s: tf.TensorShape([None]).concatenate(s), size)
+
+		#Apparently we need that extra dimension for the sole purpose of calling compute_output_shape . . .
+		layer_output_shape = self._output_layer.compute_output_shape(output_shapw_with_unknown_batch)
+
+		#. . . since we just discard it right here
+		return tf.contrib.framework.nest.map_structure(lambda s: s[1:], layer_output_shape)
 
 
 	def _beam_scores(self, beams):
