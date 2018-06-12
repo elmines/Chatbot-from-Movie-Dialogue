@@ -1,4 +1,5 @@
 import re
+import nltk
 
 _INFINITY = float("inf")
 
@@ -115,20 +116,40 @@ class Corpus(object):
 
 		return (prompts, answers)
 
+
 	@staticmethod
 	def _clean(prompts, answers):
-		# Clean the data
+		"""
+		Returns
+			prompts - a 2-D list of strings where prompt[i][j] is the jth token in the ith sequence
+			answers - a 2-D list of strings like prompts
+		"""
+
 		clean_prompts = []
 		for prompt in prompts:
 	    		clean_prompts.append(Corpus.clean_sequence(prompt))
+
 		clean_answers = []    
 		for answer in answers:
 	    		clean_answers.append(Corpus.clean_sequence(answer))
 
 		return (clean_prompts, clean_answers)
-	
+
+		
 	@staticmethod
-	def clean_sequence(text):
+	def clean_sequence(sequence):
+		"""
+		Returns
+			A list of strings where element i is the ith token
+		"""
+		tokenized = nltk.word_tokenize(sequence)
+		filtered = Corpus._re_filters( " ".join(tokenized) )
+		lowercased = [word.lower() for word in filtered.split(" ") if re.match('^[a-zA-Z]+', word) ]
+
+		return lowercased
+
+	@staticmethod
+	def _re_filters(text):
 		'''Clean text by removing unnecessary characters and altering the format of words.'''
 		text = text.lower()
 		text = re.sub(r"i'm", "i am", text)
@@ -155,18 +176,23 @@ class Corpus(object):
 
 	@staticmethod
 	def _filter_by_length(prompts, answers, min_line_length, max_line_length):
+		"""
+		Returns
+			short_prompts - a 2-D list of strings where short_prompts[i][j] is the jth token of the ith sequence
+			short_answers - a 2-D list of strings like short_prompts
+		"""
 		# Filter out the prompts that are too short/long
 		short_prompts_temp = []
 		short_answers_temp = []
 		for (i, prompt) in enumerate(prompts):
-			if len(prompt.split()) >= min_line_length and len(prompt.split()) <= max_line_length:
+			if len(prompt) >= min_line_length and len(prompt) <= max_line_length:
 				short_prompts_temp.append(prompt)
 				short_answers_temp.append(answers[i])
 		# Filter out the answers that are too short/long
 		short_prompts = []
 		short_answers = []
 		for (i, answer) in enumerate(short_answers_temp):
-			if len(answer.split()) >= min_line_length and len(answer.split()) <= max_line_length:
+			if len(answer) >= min_line_length and len(answer) <= max_line_length:
 	        		short_answers.append(answer)
 	        		short_prompts.append(short_prompts_temp[i])
 
@@ -174,13 +200,18 @@ class Corpus(object):
 
 	@staticmethod
 	def _generate_vocab(prompts, answers, max_vocab):
+		"""
+		prompts - A 2-D list of strings
+		answers - A 2-D list of strings
+		"""
+
 		word_freq = {}
 		for prompt in prompts:
-    			for word in prompt.split():
+    			for word in prompt:
         			if word not in word_freq: word_freq[word]  = 1
         			else:                     word_freq[word] += 1
 		for answer in answers:
-    			for word in answer.split():
+    			for word in answer:
         			if word not in word_freq: word_freq[word]  = 1
         			else:                     word_freq[word] += 1
 	
@@ -196,23 +227,22 @@ class Corpus(object):
 
 	@staticmethod
 	def _replace_unknowns(sequences, vocab, unk):
-		return [ " ".join([word if word in vocab else unk for word in sequence.split()]) for sequence in sequences ]
+		"""
+		sequences - A 2-D list of strings
+		Returns
+			A 2-D list of strings
+		"""
+		return [ [word if word in vocab else unk for word in sequence] for sequence in sequences ]
 
 	@staticmethod
 	def _encode(sequences, vocab2int):
+		"""
+		sequences - 2-D list of strings
+		Returns
+			A 2-D list of integers
+		"""	
 		# Convert the text to integers. 
-		# Replace any words that are not in the respective vocabulary with <UNK> 
-		return [ [vocab2int[word] for word in sequence.split()] for sequence in sequences]
-
-		"""
-		sequences_int = []
-		for sequence in sequences:
-	    		ints = []
-	    		for word in sequence.split():
-				ints.append(vocab2int[word])
-	    		sequences_int.append(ints)
-		return sequences_int
-		"""
+		return [ [vocab2int[word] for word in sequence] for sequence in sequences]
 
 	@staticmethod
 	def _write_lines(path, lines):
