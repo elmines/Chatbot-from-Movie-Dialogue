@@ -49,6 +49,10 @@ class Corpus(object):
 
 
 		(prompts, answers) = Corpus._generate_sequences(lines, conv_lines)
+
+		self.orig_prompts = prompts
+		self.orig_answers = answers
+
 		(clean_prompts, clean_answers) = Corpus._clean(prompts, answers)
 		(short_prompts, short_answers) = Corpus._filter_by_length(clean_prompts, clean_answers, min_line_length, max_line_length)
 
@@ -142,9 +146,9 @@ class Corpus(object):
 		Returns
 			A list of strings where element i is the ith token
 		"""
-		tokenized = nltk.word_tokenize(sequence)
-		filtered = Corpus._re_filters( " ".join(tokenized) )
-		lowercased = [word.lower() for word in filtered.split(" ") if re.match('^[a-zA-Z]+', word) ]
+		filtered = Corpus._re_filters(sequence)
+		tokenized = nltk.word_tokenize(filtered)
+		lowercased = [word.lower() for word in tokenized if re.match('^[a-zA-Z]+', word) ]
 
 		return lowercased
 
@@ -171,7 +175,8 @@ class Corpus(object):
 		text = re.sub(r"n'", "ng", text)
 		text = re.sub(r"'bout", "about", text)
 		text = re.sub(r"'til", "until", text)
-		text = re.sub(r"[-()\"#/@;:<>{}`+=~|.!?,]", "", text)
+
+		#text = re.sub(r"[-()\"#/@;:<>{}`+=~|.!?,]", "", text)
 		return text
 
 	@staticmethod
