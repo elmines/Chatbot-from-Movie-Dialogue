@@ -58,11 +58,15 @@ def perplexity_test():
 
 
 def bleu_and_wer_test(references, hypotheses):
-	individual_bleus = metrics.bleu(references, hypotheses, average_across_batch=False)
-	average_bleu = metrics.bleu(references, hypotheses)
 
-	individual_wers = metrics.batch_word_error_rate(references, hypotheses, average_across_batch=False)
-	average_wer = metrics.batch_word_error_rate(references, hypotheses)
+	token_references = [reference.split(" ") for reference in references]
+	token_hypotheses = [hypothesis.split(" ") for hypothesis in hypotheses]
+
+	individual_bleus = metrics.bleu(token_references, token_hypotheses, average_across_batch=False)
+	average_bleu = metrics.bleu(token_references, token_hypotheses)
+
+	individual_wers = metrics.batch_word_error_rate(token_references, token_hypotheses, average_across_batch=False)
+	average_wer = metrics.batch_word_error_rate(token_references, token_hypotheses)
 
 	for i in range(len(references)):
 		print("Translation {}".format(i))
@@ -98,5 +102,5 @@ hypotheses = ["are you that angry to be visiting the beach ?",
 ]
 
 if __name__ == "__main__":
-	#bleu_and_wer_test(references, hypotheses)
+	bleu_and_wer_test(references, hypotheses)
 	perplexity_test()
