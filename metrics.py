@@ -59,7 +59,7 @@ def word_error_rate(reference, hypothesis):
         		if i == 0:
             			distance[0][j] = j
         		elif j == 0:
-            			distance[i][0] 	
+            			distance[i][0] = i
 	for i in range(1, len(reference) + 1):
     		for j in range(1, len(hypothesis) + 1):
         		if reference[i - 1] == hypothesis[j - 1]:
@@ -72,4 +72,4 @@ def word_error_rate(reference, hypothesis):
 
 
 
-	return float(distance[len(reference)][len(hypothesis)]) / len(reference) * 100
+	return float(distance[len(reference)][len(hypothesis)]) / len(reference)
