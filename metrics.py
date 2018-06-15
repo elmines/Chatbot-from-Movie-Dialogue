@@ -2,14 +2,14 @@ import tensorflow as tf
 import nltk
 import numpy as np
 
-def sequence_perplexity(labels = None, logits = None):
+def perplexity(logits = None, labels = None):
 	"""
 	`labels` - the ground truth target values: Tensor of dimensinos [batch_size*max_time_step]
 	`logits` - the predictions of dimensions [batch_size*max_time_step, num_output_classes]
 	Returns
 		losses - the loss of dimension [batch_size*max_time_step]
 	"""
-	return tf.exp( tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=logits) )
+	return tf.exp( tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels))
 	
 def bleu(references, hypotheses, average_across_batch=True):
 	"""
