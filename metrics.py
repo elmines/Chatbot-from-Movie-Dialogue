@@ -9,7 +9,7 @@ def sequence_perplexity(labels = None, logits = None):
 	Returns
 		losses - the loss of dimension [batch_size*max_time_step]
 	"""
-	 return tf.exp( tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=logits) )
+	return tf.exp( tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=logits) )
 	
 def bleu(references, hypotheses, average_across_batch=True):
 	"""
@@ -18,14 +18,14 @@ def bleu(references, hypotheses, average_across_batch=True):
 	`references` - a list of strings, with one reference per hypothesis
 	`hypotheses` - a list of strings
 	"""
-	losses = np.array([nltk.translate.sentence_bleu([targets[i]], predictions[i]) for i in range(len(targets))],
-			dtype=np.float32)
+	losses = np.array([nltk.translate.bleu_score.sentence_bleu([references[i]], hypotheses[i]) for i in range(len(references))],
+			dtype=np.float32) * 100.
 
 	if average_across_batch:
-		return np.sum(losses)
+		return np.sum(losses) / len(references)
 	return losses
 
-def batch_word_error_rate(references, hypthoses, average_across_batch=True):
+def batch_word_error_rate(references, hypotheses, average_across_batch=True):
 	"""
 	`references` - list of strings where each string is a reference translation
 	`hypotheses` - list of strings where each string is a hypothesis
@@ -33,7 +33,7 @@ def batch_word_error_rate(references, hypthoses, average_across_batch=True):
 	losses = np.array([word_error_rate(references[i].split(" "), hypotheses[i].split(" ")) for i in range(len(references))], dtype=np.float32 )
 
 	if average_across_batch:
-		return np.sum(losses)
+		return np.sum(losses) / len(references)
 	return losses
 
 def word_error_rate(reference, hypothesis):
@@ -43,8 +43,8 @@ def word_error_rate(reference, hypothesis):
 
 	Returns word error rate(insert, delete or substitution).
 	"""
-		
-	distance = numpy.zeros((len(reference) + 1) * (len(hypothesis) + 1), dtype=numpy.uint16)
+
+	distance = np.zeros((len(reference) + 1) * (len(hypothesis) + 1), dtype=np.uint16)
 	distance = distance.reshape((len(reference) + 1, len(hypothesis) + 1))
 	for i in range(len(reference) + 1):
     		for j in range(len(hypothesis) + 1):
@@ -61,4 +61,7 @@ def word_error_rate(reference, hypothesis):
             			insertion = distance[i][j - 1] + 1
             			deletion = distance[i - 1][j] + 1
             			distance[i][j] = min(substitution, insertion, deletion)
-	result = float(distance[len(reference)][len(hypothesis)]) / len(reference) * 100
+
+
+
+	return float(distance[len(reference)][len(hypothesis)]) / len(reference) * 100
