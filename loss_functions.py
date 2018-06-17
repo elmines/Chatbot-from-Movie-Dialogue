@@ -9,7 +9,7 @@ def cross_entropy(train_logits,targets,target_lengths):
 
 def min_affective_dissonance(param,train_logits,targets,target_lengths,enc_embed_input,dec_embed_input):
     lamba = tf.Variable(param, name="lamba")
-    lamba_inv=tf.Variable(-(1.0-param),name="lamba_inv")
+    lamba_inv=tf.Variable((1.0-param),name="lamba_inv")
     predicted_prob = tf.reduce_max(dec_embed_input)
       
     affect_distance = tf.nn.l2_normalize(tf.subtract(tf.reduce_mean(enc_embed_input,1), tf.reduce_mean(dec_embed_input,1)))
@@ -21,7 +21,7 @@ def min_affective_dissonance(param,train_logits,targets,target_lengths,enc_embed
 
 def max_affective_dissonance(param,train_logits,targets,target_lengths,enc_embed_input,dec_embed_input):
     lamba = tf.Variable(param, name="lamba")
-    lamba_inv=tf.Variable(-(1.0-param),name="lamba_inv")
+    lamba_inv=tf.Variable((1.0-param),name="lamba_inv")
     predicted_prob = tf.reduce_max(dec_embed_input)
       
     affect_distance = tf.nn.l2_normalize(tf.subtract(tf.reduce_mean(enc_embed_input,1), tf.reduce_mean(dec_embed_input,1)))
@@ -33,7 +33,7 @@ def max_affective_dissonance(param,train_logits,targets,target_lengths,enc_embed
 
 def max_affective_content(param,train_logits,targets,target_lengths,dec_embed_input):
     lamba = tf.Variable(param, name="lamba")
-    lamba_inv=tf.Variable(-(1.0-param),name="lamba_inv")
+    lamba_inv=tf.Variable((1.0-param),name="lamba_inv")
     predicted_prob = tf.reduce_max(dec_embed_input)
     eta =[5,1,5]  
     affect_distance = tf.nn.l2_normalize(tf.subtract(dec_embed_input,eta))
