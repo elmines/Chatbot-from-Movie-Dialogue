@@ -1,8 +1,11 @@
-
-from gensim.models import Word2Vec #pycontractions requires a Word2Vec model
-import pycontractions
 import re
 import nltk
+
+import gensim
+import pycontractions
+import language_check
+
+import os
 
 import numpy as np #For shuffling
 
@@ -16,51 +19,128 @@ _DEFAULT_MAX_LINE_LENGTH = _INFINITY
 
 
 _DEFAULT_UNK = "<UNK>"
-_DEFAULT_CONTR_MODEL = "contractions.model"
+_DEFAULT_CONTR_MODEL = "w2vec_models/contractions.model"
+
+class SimpleContractions(pycontractions.Contractions):
+
+	def __init__(self, w2v_path):
+		pycontractions.Contractions.__init__(self, w2v_path)
+		self.w2v_model = gensim.models.KeyedVectors.load(self.w2v_path)
+		self.lc_tool = language_check.LanguageTool(self.lang_code)
 
 
-def gen_datasets(self, lines_path, conversations_path
+
+def gen_datasets(lines_path, conversations_path,
 		max_vocab=_DEFAULT_MAX_WORDS, min_line_length=_DEFAULT_MIN_LINE_LENGTH, max_line_length=_DEFAULT_MAX_LINE_LENGTH,
-		unk = _DEFAULT_UNK, contraction_model_path = _DEFAULT_CONTR_MODEL):
+		unk = _DEFAULT_UNK, contraction_model_path=None, partition=(0.8, 0.2, 0.0), corpus_dir="corpora", verbose=True):
+	"""
+	lines_path - path to the Cornell Movie lines file
+	conversations_path - path to the Cornell Movie conversations path
+	max_vocab - The maximum size vocabulary to generate (not counting the unknown token), default of {}
+	min_line_length - The minimum number of tokens for a prompt or answer, default of {}
+	max_line_length - The maximum number of tokens for a prompt or answer, defalut of infinity
+	unk - The symbol to be used for the unknown token, default of {}
+	contraction_model_path - The path to a gensim.models.KeyedVector file already trained on the text
+	partition - 3-tuple of the ratios of the total dataset to use for training, validation, and testing
+	corpus_dir - path-like object to which the cleaned text files and the vocabulary are written
+	verbose - Print messages indicating the files that have been generated
+	""".format(_DEFAULT_MAX_WORDS, _DEFAULT_MIN_LINE_LENGTH, _DEFAULT_UNK)
 
 	
+	if len(partition) != 3:
+		raise ValueError("partition has length {}, must be 3.".format(len(partition)))
+	if abs(sum(partition) - 1.0) > 0.001:
+		raise ValueError("Ratios in partition must sum to 1.0")
+	
+	
+
 	with open(lines_path, "r", encoding="utf-8", errors="ignore") as r:
-			lines = r.read().split("\n")
+		lines = r.read().split("\n")
 	with open(conversations_path, "r", encoding="utf-8", errors="ignore") as r:
 		conv_lines = r.read().split("\n")
-
-
 	(prompts, answers) = _generate_sequences(lines, conv_lines)
+	if verbose: print("Read sequences from Cornell files")
 
-	orig_prompts = prompts
-	orig_answers = answers
+	if contraction_model_path is None:
+		orig_prompts = prompts
+		orig_answers = answers
+		corpus_tokens = [[token for token in prompt.split(" ")] for prompt in orig_prompts] + [[token for token in answer.split(" ")] for answer in orig_answers]	
+		contraction_model_path = _DEFAULT_CONTR_MODEL
+		contraction_model = gensim.models.Word2Vec(sentences=corpus_tokens, size=1024, window=5, min_count=1, workers=4, sg=0)
+		model_vectors = contraction_model.wv
+		model_vectors.save(contraction_model_path)
+		if verbose: print("Wrote Word2Vec model for finding contractions at {}".format(contraction_model_path))
+		#The model will have to be reloaded by pycontractions, so why waste memory? 
+		del contraction_model
+		del model_vectors
 
-	corpus_tokens = [[token for token in prompt.split(" ")] for token in prompt] +	
-			[[token for token in answer.split(" ")] for token in answer]	
-	contraction_model = Word2Vec(sentences=corpus_tokens, size=1024, window=5, min_count=1, workers=4, sg=0)
-	contraction_model.save(contraction_model_path)
-	del contraction_model #It will have to be reloaded by pycontractions, so why waste memory?
 
-
-	(clean_prompts, clean_answers) = _clean(prompts, answers)
-
-
+	contraction_exp = SimpleContractions(contraction_model_path)
+	(clean_prompts, clean_answers) = _clean(prompts, answers, contraction_exp)
+	del contraction_exp
+	if verbose: print("Expanded contractions and both tokenized and lowercased the text")
 
 	(short_prompts, short_answers) = _filter_by_length(clean_prompts, clean_answers, min_line_length, max_line_length)
 
-	#self.unk = unk
 	vocab = _generate_vocab(short_prompts, short_answers, max_vocab) + [unk]
-	vocab2int = { word:index for (index, word) in enumerate(self.vocab) }
-	int2vocab = { index:word for (word, index) in self.vocab2int.items() }
+	vocab2int = {word:index for (index, word) in enumerate(vocab) }
+	if verbose: print("Generated the vocabulary")
 	
-	prompts_with_unk = Corpus._replace_unknowns(short_prompts, vocab2int, unk)
-	answers_with_unk = Corpus._replace_unknowns(short_answers, vocab2int, unk)
+	prompts_with_unk = _replace_unknowns(short_prompts, vocab2int, unk)
+	answers_with_unk = _replace_unknowns(short_answers, vocab2int, unk)
+	if verbose: print("Replaced out-of-vocabulary words with {}".format(unk))
 
-	prompts_text = prompts_with_unk
-	answers_text = answers_with_unk
+	assert len(prompts_with_unk) == len(answers_with_unk)
 
-	prompts_int = _encode(prompts, vocab2int)
-	answers_int = _encode(answers, vocab2int)
+	shuffled_indices = np.random.permutation(len(prompts_with_unk))
+	shuffled_prompts = [prompts_with_unk[i] for i in range(len(shuffled_indices))]
+	shuffled_answers = [answers_with_unk[i] for i in range(len(shuffled_indices))]
+	if verbose: print("Shuffled dataset")
+
+
+	full_prompts = shuffled_prompts
+	full_answers = shuffled_answers
+
+	num_train = int(partition[0] * len(full_prompts))
+	num_valid = int(partition[1] * len(full_prompts))
+	num_test = len(full_prompts) - num_valid - num_train
+
+	train_indices = (0, num_train)
+	valid_indices = (num_train, num_train + num_valid)
+	test_indices = (num_train + num_valid, -1)
+
+	output_dir = "corpora"
+	output_files = [""]
+
+	for (purpose, indices) in zip( ["train", "valid", "test"], [train_indices, valid_indices, test_indices] ):
+		#Don't write a file if we didn't partition any data for that purpose
+		if indices[1] > indices[0]:
+			prompt_lines = full_prompts[indices[0]:indices[1]]
+			prompts_path = os.path.join(corpus_dir, purpose + "_prompts.txt")
+			write_text(prompts_path, prompt_lines)
+			if verbose: print("Wrote {} lines to {}".format(indices[1] - indices[0], prompts_path))
+	
+			answer_lines = full_answers[indices[0]:indices[1]]
+			answers_path = os.path.join(corpus_dir, purpose + "_answers.txt")
+			write_text(answers_path, answer_lines)
+			if verbose: print("Wrote {} lines to {}".format(indices[1] - indices[0], answers_path))
+	
+
+	write_vocab("vocab.txt", vocab2int)
+
+
+def write_text(path, text):
+	"""
+	text - a 2-D list of strings
+	"""
+	lines = "\n".join([" ".join(sequence) for sequence in text])
+	write_lines(path, lines)
+def write_vocab(path, vocab2int):
+	lines = "\n".join( ["{0} {1}".format(word, index) for (word, index) in vocab2int.items()] )
+	write_lines(path, lines)
+def write_lines(path, lines):
+	with open(path, "w", encoding="utf-8") as w:
+		w.write(lines)		
 
 
 	
@@ -88,32 +168,27 @@ def _generate_sequences(lines, conv_lines):
 	return (prompts, answers)
 
 
-def _clean(prompts, answers, contractions_model_path):
+def _clean(prompts, answers, contractions_exp):
 	"""
+	prompts - a list of strings
+	answers - a list of strings
+	contractions_exp - an instance of pycontractions.Contractions
 	Returns
 		prompts - a 2-D list of strings where prompt[i][j] is the jth token in the ith sequence
 		answers - a 2-D list of strings like prompts
 	"""
-	prompts_string = "\n".join(prompts)
-	answers_string = "\n".join(answers)
 
-	#Expand contractions
-	expander = pycontractions.Contractions(contractions_model_path)
-	#Each loop will only run once
-	for expansion in expander.expand_texts(prompts_string, precise=True):
-		expanded_prompts = expansion
-	for expansion in expander.expand_texts(answers_string, precise=True):
-		expanded_answers = expansion
-	del expander #Get rid of that model
 
-	prompts_tokens = [" ".split(prompt) for prompt in expanded_prompts.split("\n")]
-	answers_tokens = [" ".split(answer) for answer in expanded_answers.split("\n")]
+	expanded_prompts = [expansion for expansion in contractions_exp.expand_texts(prompts, precise=True)]
+	expanded_answers = [expansion for expansion in contractions_exp.expand_texts(answers, precise=True)]
 
-	prompts_tokenized = [nltk.word_tokenize(prompt) for prompt in prompts_tokens]
-	answers_tokenized = [nltk.word_tokenize(answer) for answer in answers_tokens]
+	prompts_tokenized = [nltk.word_tokenize(prompt) for prompt in expanded_prompts]
+	answers_tokenized = [nltk.word_tokenize(answer) for answer in expanded_answers]
 
 	lowercase_prompts = _lowercase_tokens(prompts_tokenized)
 	lowercase_answers = _lowercase_tokens(answers_tokenized)
+
+	return (lowercase_prompts, lowercase_answers)
 	
 
 
@@ -121,7 +196,7 @@ def _lowercase_tokens(tokens):
 	"""
 	tokens - A 2-D list of strings where tokens[i][j] is the jth token of the ith sequence or sentence
 	"""
-	return [ [word.lower() for word in tokenized if re.match("^[a-zA-Z]+", word)] ]
+	return [[token.lower() if re.match("^[a-zA-Z]+", token) else token for token in sequence] for sequence in tokens]
 	
 def _filter_by_length(prompts, answers, min_line_length, max_line_length):
 	"""
@@ -163,7 +238,7 @@ def _generate_vocab(prompts, answers, max_vocab):
 	sorted_by_freq = sorted(word_freq.keys(), key=lambda word: word_freq[word], reverse=True)
 	del word_freq
 
-		if len(sorted_by_freq) < max_vocab:
+	if len(sorted_by_freq) < max_vocab:
 		vocab = sorted_by_freq
 	else:
 		vocab = sorted_by_freq[:max_vocab]
@@ -175,11 +250,4 @@ def _replace_unknowns(sequences, vocab, unk):
 		A 2-D list of strings
 	"""
 	return [ [word if word in vocab else unk for word in sequence] for sequence in sequences ]
-def _encode(sequences, vocab2int):
-	"""
-	sequences - 2-D list of strings
-	Returns
-		A 2-D list of integers
-	"""	
-	# Convert the text to integers. 
-	return [ [vocab2int[word] for word in sequence] for sequence in sequences]
+
