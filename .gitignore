@@ -9,6 +9,9 @@ __MACOSX/
 #Data files (though not the .zip archives)
 *.txt
 
+#Corpus files
+!corpora/*.txt
+
 #Tensorflow checkpoint files
 checkpoint
 *ckpt*
