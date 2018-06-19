@@ -93,8 +93,8 @@ def gen_datasets(lines_path, conversations_path,
 	id2line = { id_no:line for (id_no, line) in zip(ids, clean_text) }
 	(prompts, answers) = _generate_sequences(id2line, conv_lines)
 
-	write_text("half_clean_prompts.txt", full_prompts)
-	write_text("half_clean__answers.txt", full_answers)
+	write_text("clean_prompts.txt", prompts)
+	write_text("clean_answers.txt", answers)
 
 	(short_prompts, short_answers) = _filter_by_length(prompts, answers, min_line_length, max_line_length)
 
@@ -124,7 +124,6 @@ def gen_datasets(lines_path, conversations_path,
 	valid_indices = (num_train, num_train + num_valid)
 	test_indices = (num_train + num_valid, -1)
 
-	output_dir = "corpora"
 	for (purpose, indices) in zip( ["train", "valid", "test"], [train_indices, valid_indices, test_indices] ):
 		#Don't write a file if we didn't partition any data for that purpose
 		if indices[1] > indices[0]:
