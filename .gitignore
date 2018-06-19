@@ -11,6 +11,7 @@ __MACOSX/
 
 #Corpus files
 !corpora/*.txt
+!vocab.txt
 
 #Tensorflow checkpoint files
 checkpoint
