@@ -1,21 +1,22 @@
 import re
 import nltk
-
 import gensim
 import pycontractions
 import language_check
 
 import os
+import sys
 
 import numpy as np #For shuffling
+
 
 np.random.seed(1)
 
 _INFINITY = float("inf")
 
-_DEFAULT_MAX_WORDS = _INFINITY
+_DEFAULT_MAX_WORDS = 12000
 _DEFAULT_MIN_LINE_LENGTH = 1
-_DEFAULT_MAX_LINE_LENGTH = _INFINITY
+_DEFAULT_MAX_LINE_LENGTH = 60
 
 
 _DEFAULT_UNK = "<UNK>"
@@ -32,19 +33,21 @@ class SimpleContractions(pycontractions.Contractions):
 
 def gen_datasets(lines_path, conversations_path,
 		max_vocab=_DEFAULT_MAX_WORDS, min_line_length=_DEFAULT_MIN_LINE_LENGTH, max_line_length=_DEFAULT_MAX_LINE_LENGTH,
-		unk = _DEFAULT_UNK, contraction_model_path=None, partition=(0.8, 0.2, 0.0), corpus_dir="corpora", verbose=True):
+		unk = _DEFAULT_UNK, contraction_model_path=None, partition=(0.8, 0.2, 0.0), output_dir="corpora", verbose=True):
 	"""
 	lines_path - path to the Cornell Movie lines file
 	conversations_path - path to the Cornell Movie conversations path
-	max_vocab - The maximum size vocabulary to generate (not counting the unknown token), default of {}
-	min_line_length - The minimum number of tokens for a prompt or answer, default of {}
+	max_vocab - The maximum size vocabulary to generate (not counting the unknown token), default of 12000
+	min_line_length - The minimum number of tokens for a prompt or answer, default of 1
 	max_line_length - The maximum number of tokens for a prompt or answer, defalut of infinity
-	unk - The symbol to be used for the unknown token, default of {}
+	unk - The symbol to be used for the unknown token, default of <UNK>
 	contraction_model_path - The path to a gensim.models.KeyedVector file already trained on the text
 	partition - 3-tuple of the ratios of the total dataset to use for training, validation, and testing
-	corpus_dir - path-like object to which the cleaned text files and the vocabulary are written
+	output_dir - path-like object to which the cleaned text files and the vocabulary are written
 	verbose - Print messages indicating the files that have been generated
-	""".format(_DEFAULT_MAX_WORDS, _DEFAULT_MIN_LINE_LENGTH, _DEFAULT_UNK)
+
+	Note that the vocabulary file written to output_dir will always have the unknown token as its first entry
+	"""
 
 	
 	if len(partition) != 3:
@@ -58,8 +61,17 @@ def gen_datasets(lines_path, conversations_path,
 		lines = r.read().split("\n")
 	with open(conversations_path, "r", encoding="utf-8", errors="ignore") as r:
 		conv_lines = r.read().split("\n")
-	(prompts, answers) = _generate_sequences(lines, conv_lines)
-	if verbose: print("Read sequences from Cornell files")
+	if verbose: sys.stderr.write("Read sequences from Cornell files\n")
+
+	# Create a dictionary to map each line's id with its text
+	ids = []
+	lines_text = []
+	for line in lines:
+		_line = line.split(' +++$+++ ')
+		if len(_line) == 5: #Lines not of length 5 are not properly formatted
+			ids.append(_line[0])
+			lines_text.append(_line[4])
+
 
 	if contraction_model_path is None:
 		orig_prompts = prompts
@@ -69,64 +81,66 @@ def gen_datasets(lines_path, conversations_path,
 		contraction_model = gensim.models.Word2Vec(sentences=corpus_tokens, size=1024, window=5, min_count=1, workers=4, sg=0)
 		model_vectors = contraction_model.wv
 		model_vectors.save(contraction_model_path)
-		if verbose: print("Wrote Word2Vec model for finding contractions at {}".format(contraction_model_path))
+		if verbose: sys.stderr.write("Wrote Word2Vec model for finding contractions at {}.\n".format(contraction_model_path))
 		#The model will have to be reloaded by pycontractions, so why waste memory? 
 		del contraction_model
 		del model_vectors
-
-
 	contraction_exp = SimpleContractions(contraction_model_path)
-	(clean_prompts, clean_answers) = _clean(prompts, answers, contraction_exp)
+	clean_text = _clean(lines_text, contraction_exp, verbose=verbose)
+	if verbose: sys.stderr.write("Expanded contractions and both tokenized and lowercased the text.\n")
 	del contraction_exp
-	if verbose: print("Expanded contractions and both tokenized and lowercased the text")
 
-	(short_prompts, short_answers) = _filter_by_length(clean_prompts, clean_answers, min_line_length, max_line_length)
+	id2line = { id_no:line for (id_no, line) in zip(ids, clean_text) }
+	(prompts, answers) = _generate_sequences(id2line, conv_lines)
 
-	vocab = _generate_vocab(short_prompts, short_answers, max_vocab) + [unk]
+	write_text("half_clean_prompts.txt", full_prompts)
+	write_text("half_clean__answers.txt", full_answers)
+
+	(short_prompts, short_answers) = _filter_by_length(prompts, answers, min_line_length, max_line_length)
+
+	vocab = [unk] + _generate_vocab(short_prompts, short_answers, max_vocab)
 	vocab2int = {word:index for (index, word) in enumerate(vocab) }
-	if verbose: print("Generated the vocabulary")
+	if verbose: sys.stderr.write("Generated the vocabulary.\n")
 	
 	prompts_with_unk = _replace_unknowns(short_prompts, vocab2int, unk)
 	answers_with_unk = _replace_unknowns(short_answers, vocab2int, unk)
-	if verbose: print("Replaced out-of-vocabulary words with {}".format(unk))
+	if verbose: sys.stderr.write("Replaced out-of-vocabulary words with {}.\n".format(unk))
 
 	assert len(prompts_with_unk) == len(answers_with_unk)
-
 	shuffled_indices = np.random.permutation(len(prompts_with_unk))
-	shuffled_prompts = [prompts_with_unk[i] for i in range(len(shuffled_indices))]
-	shuffled_answers = [answers_with_unk[i] for i in range(len(shuffled_indices))]
-	if verbose: print("Shuffled dataset")
+	shuffled_prompts = [prompts_with_unk[index] for index in shuffled_indices]
+	shuffled_answers = [answers_with_unk[index] for index in shuffled_indices]
+	if verbose: sys.stderr.write("Shuffled the dataset.\n")
 
 
 	full_prompts = shuffled_prompts
 	full_answers = shuffled_answers
 
+
 	num_train = int(partition[0] * len(full_prompts))
 	num_valid = int(partition[1] * len(full_prompts))
 	num_test = len(full_prompts) - num_valid - num_train
-
 	train_indices = (0, num_train)
 	valid_indices = (num_train, num_train + num_valid)
 	test_indices = (num_train + num_valid, -1)
 
 	output_dir = "corpora"
-	output_files = [""]
-
 	for (purpose, indices) in zip( ["train", "valid", "test"], [train_indices, valid_indices, test_indices] ):
 		#Don't write a file if we didn't partition any data for that purpose
 		if indices[1] > indices[0]:
 			prompt_lines = full_prompts[indices[0]:indices[1]]
-			prompts_path = os.path.join(corpus_dir, purpose + "_prompts.txt")
+			prompts_path = os.path.join(output_dir, purpose + "_prompts.txt")
 			write_text(prompts_path, prompt_lines)
-			if verbose: print("Wrote {} lines to {}".format(indices[1] - indices[0], prompts_path))
+			if verbose: sys.stderr.write("Wrote {} lines to {}.\n".format(indices[1] - indices[0], prompts_path))
 	
 			answer_lines = full_answers[indices[0]:indices[1]]
-			answers_path = os.path.join(corpus_dir, purpose + "_answers.txt")
+			answers_path = os.path.join(output_dir, purpose + "_answers.txt")
 			write_text(answers_path, answer_lines)
-			if verbose: print("Wrote {} lines to {}".format(indices[1] - indices[0], answers_path))
-	
+			if verbose: sys.stderr.write("Wrote {} lines to {}.\n".format(indices[1] - indices[0], answers_path))
+	vocab_path = os.path.join(output_dir, "vocab.txt")
+	write_vocab(vocab_path, vocab2int)
+	if verbose: sys.stderr.write("Wrote vocabulary to {}.\n".format(vocab_path))
 
-	write_vocab("vocab.txt", vocab2int)
 
 
 def write_text(path, text):
@@ -143,15 +157,8 @@ def write_lines(path, lines):
 		w.write(lines)		
 
 
-	
 
-def _generate_sequences(lines, conv_lines):
-	# Create a dictionary to map each line's id with its text
-	id2line = {}
-	for line in lines:
-		_line = line.split(' +++$+++ ')
-		if len(_line) == 5: #Lines not of length 5 are not properly formatted
-	        	id2line[_line[0]] = _line[4]
+def _generate_sequences(id2line, conv_lines):
 
 	# Create a list of all of the conversations' lines' ids.
 	convs = []
@@ -168,29 +175,31 @@ def _generate_sequences(lines, conv_lines):
 	return (prompts, answers)
 
 
-def _clean(prompts, answers, contractions_exp):
+def _clean(text, contractions_exp, verbose=False):
 	"""
-	prompts - a list of strings
-	answers - a list of strings
-	contractions_exp - an instance of pycontractions.Contractions
-	Returns
-		prompts - a 2-D list of strings where prompt[i][j] is the jth token in the ith sequence
-		answers - a 2-D list of strings like prompts
 	"""
+	if verbose: sys.stderr.write("{} sequences to clean.".format(len(text)))
 
+	i = 0
+	expanded_text = []
+	for expansion in contractions_exp.expand_texts(text, precise=False):
+		expanded_text.append(_punct_filters(expansion))
+		i += 1
+		if verbose and i % 1000 == 0:
+			sys.stderr.write("Cleaned punctuation and contractions of {} sequences.\n".format(i))
 
-	expanded_prompts = [expansion for expansion in contractions_exp.expand_texts(prompts, precise=True)]
-	expanded_answers = [expansion for expansion in contractions_exp.expand_texts(answers, precise=True)]
-
-	prompts_tokenized = [nltk.word_tokenize(prompt) for prompt in expanded_prompts]
-	answers_tokenized = [nltk.word_tokenize(answer) for answer in expanded_answers]
-
-	lowercase_prompts = _lowercase_tokens(prompts_tokenized)
-	lowercase_answers = _lowercase_tokens(answers_tokenized)
-
-	return (lowercase_prompts, lowercase_answers)
+	tokenized = [nltk.word_tokenize(sequence) for sequence in expanded_text]
+	lowercased = _lowercase_tokens(tokenized)
+	return lowercased
 	
+def _punct_filters(text):
+	text = re.sub(r"\.+", ".", text)     #Ellipses and the like
+	text = re.sub(r"\. \. \.", ".", text)
+	text = re.sub(r"\-+", "-", text)
+	text = re.sub(r"\?+", "?", text)     #Duplicate end punctuation
+	text = re.sub(r"\!+", "!", text)
 
+	return text
 
 def _lowercase_tokens(tokens):
 	"""
@@ -234,7 +243,6 @@ def _generate_vocab(prompts, answers, max_vocab):
         		if word not in word_freq: word_freq[word]  = 1
         		else:                     word_freq[word] += 1
 
-
 	sorted_by_freq = sorted(word_freq.keys(), key=lambda word: word_freq[word], reverse=True)
 	del word_freq
 
@@ -250,4 +258,7 @@ def _replace_unknowns(sequences, vocab, unk):
 		A 2-D list of strings
 	"""
 	return [ [word if word in vocab else unk for word in sequence] for sequence in sequences ]
+
+if __name__ == "__main__":
+	gen_datasets("movie_lines.txt", "movie_conversations.txt", contraction_model_path = "w2vec_models/contractions.model")
 
