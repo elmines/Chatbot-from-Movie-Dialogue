@@ -53,8 +53,7 @@ def min_affective_dissonance(value,logits,enc_embed_input,full_embeddings,target
     predicted_ids = tf.argmax(softmaxed_logits,axis=-1)
     prediction_vectors = tf.nn.embedding_lookup(full_embeddings, predicted_ids)
     average_prediction_vectors = embed_predicted_timestep(prediction_vectors)
-    affect_dissonance = predicted_prob*tf.norm(input_embed - average_prediction_vectors)
-    
+    affect_dissonance = predicted_prob*tf.norm(input_embed[:,:,1024:1027] - average_prediction_vectors[:,:,1024:1027])  
     loss = tf.reduce_mean((param_inv*xent) + (param*affect_dissonance))
     return loss
 
@@ -69,7 +68,7 @@ def max_affective_dissonance(value,logits,enc_embed_input,full_embeddings,target
     predicted_ids = tf.argmax(softmaxed_logits,axis=-1)
     prediction_vectors = tf.nn.embedding_lookup(full_embeddings, predicted_ids)
     average_prediction_vectors = embed_predicted_timestep(prediction_vectors)
-    affect_dissonance = predicted_prob*tf.norm(input_embed - average_prediction_vectors)    
+    affect_dissonance = predicted_prob*tf.norm(input_embed[:,:,1024:1027] - average_prediction_vectors[:,:,1024:1027])    
     loss = tf.reduce_mean((param_inv*xent) - (param*affect_dissonance))
     return loss
 
