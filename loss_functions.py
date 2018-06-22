@@ -72,16 +72,37 @@ def max_affective_dissonance(value,logits,enc_embed_input,full_embeddings,target
     loss = tf.reduce_mean((param_inv*xent) - (param*affect_dissonance))
     return loss
 
-def max_affective_content(value,logits,full_embeddings,targets):
-    param = tf.Variable(value, name="param")
-    param_inv=tf.Variable((1.0-value),name="param_inv")
+def _average(losses, weights, across_timesteps, across_batch):
+
+    if not (across_timesteps or across_batch): return losses
+    
+    axes = []
+    if across_batch: axes.append(0)
+    if across_timesteps: axes.append(1)
+        
+    loss_sums = tf.reduce_sum(losses, axis=axes)
+    loss_counts = tf.reduce_sum(weights, axis=axes)
+    loss_counts += 1e-12  # to avoid division by 0 for all-0 weights
+    loss_averages = loss_sums / loss_counts
+
+    return loss_averages
+
+def max_affective_content(logits, targets, lambda_param, embeddings, neutral_vector, 
+                          weights = None, average_across_timesteps=True, average_across_batch=True):
+    param = tf.Variable(lambda_param, trainable=False, name="param", dtype=tf.float32)
+    param_inv= 1.0 - param
     softmaxed_logits = tf.nn.softmax(logits)
-    predicted_prob = tf.reduce_max(softmaxed_logits,axis=-1)
-    xent= -tf.log(predicted_prob)
-    #xent = -tf.log(reduce_gather(softmaxed_logits,targets))
+    xent = -tf.log(reduce_gather(softmaxed_logits,targets))
+
+    
     predicted_ids = tf.argmax(softmaxed_logits,axis=-1)
-    prediction_vectors = tf.nn.embedding_lookup(full_embeddings, predicted_ids)
-    neutral_vector = [5,1,5] 
-    affect_dissonance = tf.norm(prediction_vectors[:,:,1024:1027] - neutral_vector)
-    loss = tf.reduce_mean((param_inv*xent) - (param*predicted_prob*affect_dissonance))
-    return loss  
+    prediction_vectors = tf.nn.embedding_lookup(embeddings, predicted_ids)
+    
+    affect_dissonance = tf.norm(prediction_vectors - neutral_vector, axis=-1)
+    
+    predicted_prob = tf.reduce_max(softmaxed_logits,axis=-1)
+    losses = (param_inv*xent) - (param*predicted_prob*affect_dissonance)
+    losses *= weights
+    losses = _average(losses, weights, average_across_timesteps, average_across_batch)  
+    
+    return losses  
