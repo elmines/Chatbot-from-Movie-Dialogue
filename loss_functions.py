@@ -41,47 +41,6 @@ def reduce_gather(params, indices):
 
     return tf.reshape(elements, tf.shape(params)[:-1])
 
-def min_affective_dissonance(lambda_param,logits,targets,enc_embed_input,full_embeddings,weights = None, average_across_timesteps=True, average_across_batch=True):
-    
-    param = tf.Variable(lambda_param, trainable=False, name="param", dtype=tf.float32)
-    param_inv=tf.Variable((1.0-param),name="param_inv")
-    softmaxed_logits = tf.nn.softmax(logits)
-    
-    xent = -tf.log(reduce_gather(softmaxed_logits,targets))
-    input_embed= tf.expand_dims(tf.reduce_mean(enc_embed_input,axis=1), axis=1)
-    predicted_ids = tf.argmax(softmaxed_logits,axis=-1)
-    prediction_vectors = tf.nn.embedding_lookup(full_embeddings, predicted_ids)
-    average_prediction_vectors = embed_predicted_timestep(prediction_vectors)
-    
-    affect_dissonance = tf.norm(input_embed - average_prediction_vectors, axis=-1)
-    
-    predicted_prob = tf.reduce_max(softmaxed_logits,axis=-1)
-    losses = (param_inv*xent) + (param*predicted_prob*affect_dissonance)
-    losses *= weights
-    losses = _average(losses, weights, average_across_timesteps, average_across_batch)  
-    return losses
-
-
-
-def max_affective_dissonance(lambda_param,logits,targets,enc_embed_input,full_embeddings,weights = None, average_across_timesteps=True, average_across_batch=True):
-    
-    param = tf.Variable(lambda_param, trainable=False, name="param", dtype=tf.float32)
-    param_inv=tf.Variable((1.0-param),name="param_inv")
-    softmaxed_logits = tf.nn.softmax(logits)
-    
-    xent = -tf.log(reduce_gather(softmaxed_logits,targets))
-    input_embed= tf.expand_dims(tf.reduce_mean(enc_embed_input,axis=1), axis=1)
-    predicted_ids = tf.argmax(softmaxed_logits,axis=-1)
-    prediction_vectors = tf.nn.embedding_lookup(full_embeddings, predicted_ids)
-    average_prediction_vectors = embed_predicted_timestep(prediction_vectors)
-    
-    affect_dissonance = tf.norm(input_embed - average_prediction_vectors, axis=-1)
-    
-    predicted_prob = tf.reduce_max(softmaxed_logits,axis=-1)
-    losses = (param_inv*xent) - (param*predicted_prob*affect_dissonance)
-    losses *= weights
-    losses = _average(losses, weights, average_across_timesteps, average_across_batch)  
-    return losses
 
 def _average(losses, weights, across_timesteps, across_batch):
 
@@ -98,10 +57,36 @@ def _average(losses, weights, across_timesteps, across_batch):
 
     return loss_averages
 
+def _affective_dissonance(sign, lambda_param,logits,targets,enc_embed_input,full_embeddings,weights = None, average_across_timesteps=True, average_across_batch=True):
+    param = lambda_param
+    param_inv = 1.0 - lambda_param
+
+    softmaxed_logits = tf.nn.softmax(logits)
+    xent = -tf.log(reduce_gather(softmaxed_logits,targets))
+
+
+    input_embed= tf.reduce_mean(enc_embed_input,axis=1, keepdims=True)
+    predicted_ids = tf.argmax(softmaxed_logits,axis=-1)
+    prediction_vectors = tf.nn.embedding_lookup(full_embeddings, predicted_ids)
+    average_prediction_vectors = embed_predicted_timestep(prediction_vectors)
+    affect_dissonance = tf.norm(input_embed - average_prediction_vectors, axis=-1)
+    
+    predicted_prob = tf.reduce_max(softmaxed_logits,axis=-1)
+    losses = (param_inv*xent) + (sign)*(param*predicted_prob*affect_dissonance)
+    if weights is not None: losses *= weights
+    losses = _average(losses, weights, average_across_timesteps, average_across_batch)  
+    return losses
+
+def min_affective_dissonance(lambda_param,logits,targets,enc_embed_input, embeddings,weights = None, average_across_timesteps=True, average_across_batch=True):
+    return _affective_dissonance(1, lambda_param, logits, targets, enc_embed_input, embeddings, weights, average_across_timesteps, average_across_batch)
+
+def max_affective_dissonance(lambda_param,logits,targets,enc_embed_input, embeddings,weights = None, average_across_timesteps=True, average_across_batch=True):
+    return _affective_dissonance(-1, lambda_param, logits, targets, enc_embed_input, embeddings, weights, average_across_timesteps, average_across_batch)
+
 def max_affective_content(lambda_param,logits, targets,embeddings, neutral_vector, 
                           weights = None, average_across_timesteps=True, average_across_batch=True):
-    param = tf.Variable(lambda_param, trainable=False, name="param", dtype=tf.float32)
-    param_inv= tf.Variable((1.0-param),name="param_inv")
+    param = lambda_param
+    param_inv = 1.0 - param
     softmaxed_logits = tf.nn.softmax(logits)
     xent = -tf.log(reduce_gather(softmaxed_logits,targets))
 
@@ -113,7 +98,7 @@ def max_affective_content(lambda_param,logits, targets,embeddings, neutral_vecto
     
     predicted_prob = tf.reduce_max(softmaxed_logits,axis=-1)
     losses = (param_inv*xent) - (param*predicted_prob*affect_dissonance)
-    losses *= weights
+    if weights is not None: losses *= weights
     losses = _average(losses, weights, average_across_timesteps, average_across_batch)  
     
     return losses  
