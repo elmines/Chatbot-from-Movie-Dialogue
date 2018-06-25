@@ -9,10 +9,13 @@ import sys
 
 import numpy as np #For shuffling
 
+#Local modules
+import testset
+
 
 np.random.seed(1)
 
-_INFINITY = float("inf")
+INFINITY = float("inf")
 
 _DEFAULT_MAX_WORDS = 12000
 _DEFAULT_MIN_LINE_LENGTH = 1
@@ -33,7 +36,7 @@ class SimpleContractions(pycontractions.Contractions):
 
 def gen_datasets(lines_path, conversations_path,
 		max_vocab=_DEFAULT_MAX_WORDS, min_line_length=_DEFAULT_MIN_LINE_LENGTH, max_line_length=_DEFAULT_MAX_LINE_LENGTH,
-		unk = _DEFAULT_UNK, contraction_model_path=None, partition=(0.8, 0.2, 0.0), output_dir="corpora", verbose=True):
+		unk = _DEFAULT_UNK, contraction_model_path=None, partition=(0.8, 0.2), output_dir="corpora", verbose=True):
 	"""
 	lines_path - path to the Cornell Movie lines file
 	conversations_path - path to the Cornell Movie conversations path
@@ -49,14 +52,11 @@ def gen_datasets(lines_path, conversations_path,
 	Note that the vocabulary file written to output_dir will always have the unknown token as its first entry
 	"""
 
-	
-	if len(partition) != 3:
-		raise ValueError("partition has length {}, must be 3.".format(len(partition)))
+	if len(partition) != 2:
+		raise ValueError("partition has length {}, must be 2.".format(len(partition)))
 	if abs(sum(partition) - 1.0) > 0.001:
 		raise ValueError("Ratios in partition must sum to 1.0")
 	
-	
-
 	with open(lines_path, "r", encoding="utf-8", errors="ignore") as r:
 		lines = r.read().split("\n")
 	with open(conversations_path, "r", encoding="utf-8", errors="ignore") as r:
@@ -70,13 +70,31 @@ def gen_datasets(lines_path, conversations_path,
 		_line = line.split(' +++$+++ ')
 		if len(_line) == 5: #Lines not of length 5 are not properly formatted
 			ids.append(_line[0])
-			lines_text.append(_line[4])
+			lines_text.append( _line[4] )
 
 
+	lines_tokens = _tokenize(lines_text)
+	if verbose: sys.stderr.write("Tokenized text.\n")
+	print(lines_tokens[:5])
+	lines_tokens = _lowercase_tokens(lines_tokens)
+	if verbose: sys.stderr.write("Lowercased text.\n")
+	print(lines_tokens[:5])
+
+	id2line = { id_no:line for (id_no, line) in zip(ids, lines_tokens) }
+	(prompts, answers) = _generate_sequences(id2line, conv_lines)
+	sys.stderr.write("{} dialog exchanges.\n".format(len(prompts)))
+
+	remaining_indices = testset.exclude_testset(prompts, answers)
+
+	prompts = [prompts[index] for index in remaining_indices]
+	answers = [answers[index] for index in remaining_indices]
+	sys.stderr.write("{} sequences remaining after filtering out test sequences.\n".format(len(prompts)))
+
+	"""
 	if contraction_model_path is None:
-		orig_prompts = prompts
-		orig_answers = answers
-		corpus_tokens = [[token for token in prompt.split(" ")] for prompt in orig_prompts] + [[token for token in answer.split(" ")] for answer in orig_answers]	
+		contr_prompts = nontest_prompts
+		contr_answers = nontest_answers
+		corpus_tokens = [[token for token in sequence] for sequence in contr_prompts+contr_answers]
 		contraction_model_path = _DEFAULT_CONTR_MODEL
 		contraction_model = gensim.models.Word2Vec(sentences=corpus_tokens, size=1024, window=5, min_count=1, workers=4, sg=0)
 		model_vectors = contraction_model.wv
@@ -87,16 +105,12 @@ def gen_datasets(lines_path, conversations_path,
 		del model_vectors
 	contraction_exp = SimpleContractions(contraction_model_path)
 	clean_text = _clean(lines_text, contraction_exp, verbose=verbose)
-	if verbose: sys.stderr.write("Expanded contractions and both tokenized and lowercased the text.\n")
-	del contraction_exp
+	"""
 
-	id2line = { id_no:line for (id_no, line) in zip(ids, clean_text) }
-	(prompts, answers) = _generate_sequences(id2line, conv_lines)
-
-	write_text("clean_prompts.txt", prompts)
-	write_text("clean_answers.txt", answers)
 
 	(short_prompts, short_answers) = _filter_by_length(prompts, answers, min_line_length, max_line_length)
+	if verbose:
+		sys.stderr.write("Filtered out sequences with less than {} or more than {} tokens; {} exchanges remaining..\n".format(min_line_length, max_line_length, len(short_prompts)))
 
 	vocab = [unk] + _generate_vocab(short_prompts, short_answers, max_vocab)
 	vocab2int = {word:index for (index, word) in enumerate(vocab) }
@@ -116,15 +130,12 @@ def gen_datasets(lines_path, conversations_path,
 	full_prompts = shuffled_prompts
 	full_answers = shuffled_answers
 
-
+	"""
 	num_train = int(partition[0] * len(full_prompts))
 	num_valid = int(partition[1] * len(full_prompts))
-	num_test = len(full_prompts) - num_valid - num_train
 	train_indices = (0, num_train)
-	valid_indices = (num_train, num_train + num_valid)
-	test_indices = (num_train + num_valid, -1)
-
-	for (purpose, indices) in zip( ["train", "valid", "test"], [train_indices, valid_indices, test_indices] ):
+	valid_indices = (num_train, len(full_prompts))
+	for (purpose, indices) in zip( ["train", "valid"], [train_indices, valid_indices] ):
 		#Don't write a file if we didn't partition any data for that purpose
 		if indices[1] > indices[0]:
 			prompt_lines = full_prompts[indices[0]:indices[1]]
@@ -136,11 +147,32 @@ def gen_datasets(lines_path, conversations_path,
 			answers_path = os.path.join(output_dir, purpose + "_answers.txt")
 			write_text(answers_path, answer_lines)
 			if verbose: sys.stderr.write("Wrote {} lines to {}.\n".format(indices[1] - indices[0], answers_path))
+	"""
+
+	train_indices = []
+	valid_indices = []
+	for i, answer in enumerate(full_answers):
+		if unk in answer:
+			valid_indices.append(i)
+		else:
+			train_indices.append(i)
+
+	for (purpose, indices) in zip( ["train", "valid"], [train_indices, valid_indices] ):
+		prompt_lines = [full_prompts[index] for index in indices]
+		prompts_path = os.path.join(output_dir, purpose + "_prompts.txt")
+		write_text(prompts_path, prompt_lines)
+		if verbose: sys.stderr.write("Wrote {} lines to {}.\n".format(len(prompt_lines), prompts_path))
+
+		answer_lines = [full_answers[index] for index in indices]
+		answers_path = os.path.join(output_dir, purpose + "_answers.txt")
+		write_text(answers_path, answer_lines)
+		if verbose: sys.stderr.write("Wrote {} lines to {}.\n".format(len(answer_lines), answers_path))
+		
+
+
 	vocab_path = os.path.join(output_dir, "vocab.txt")
 	write_vocab(vocab_path, vocab2int)
 	if verbose: sys.stderr.write("Wrote vocabulary to {}.\n".format(vocab_path))
-
-
 
 def write_text(path, text):
 	"""
@@ -158,7 +190,6 @@ def write_lines(path, lines):
 
 
 def _generate_sequences(id2line, conv_lines):
-
 	# Create a list of all of the conversations' lines' ids.
 	convs = []
 	for line in conv_lines[:-1]:
@@ -199,6 +230,9 @@ def _punct_filters(text):
 	text = re.sub(r"\!+", "!", text)
 
 	return text
+
+def _tokenize(sequences):
+	return [nltk.word_tokenize(sequence) for sequence in sequences]
 
 def _lowercase_tokens(tokens):
 	"""
