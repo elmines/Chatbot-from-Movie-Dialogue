@@ -5,6 +5,8 @@ import gensim
 import pycontractions
 import language_check
 
+import multiprocessing as mp
+
 #System utilities
 import os
 import sys
@@ -37,8 +39,7 @@ class SimpleContractions(pycontractions.Contractions):
 
 
 def gen_datasets(lines_path, conversations_path,
-		max_vocab=_DEFAULT_MAX_WORDS, min_line_length=_DEFAULT_MIN_LINE_LENGTH, max_line_length=_DEFAULT_MAX_LINE_LENGTH,
-		unk = _DEFAULT_UNK, contraction_model_path=None, partition=(0.8, 0.2), output_dir="corpora", verbose=True):
+		max_vocab=_DEFAULT_MAX_WORDS, min_line_length=_DEFAULT_MIN_LINE_LENGTH, max_line_length=_DEFAULT_MAX_LINE_LENGTH, unk = _DEFAULT_UNK, contraction_model_path=None, partition=(0.8, 0.2), output_dir="corpora", num_processes=1, verbose=True):
 	"""
 	lines_path - path to the Cornell Movie lines file
 	conversations_path - path to the Cornell Movie conversations path
@@ -49,6 +50,7 @@ def gen_datasets(lines_path, conversations_path,
 	contraction_model_path - The path to a gensim.models.KeyedVector file already trained on the text
 	partition - 3-tuple of the ratios of the total dataset to use for training, validation, and testing
 	output_dir - path-like object to which the cleaned text files and the vocabulary are written
+	num_processes - number of processes to use for multithreaded code
 	verbose - Print messages indicating the files that have been generated
 
 	Note that the vocabulary file written to output_dir will always have the unknown token as its first entry
@@ -95,7 +97,6 @@ def gen_datasets(lines_path, conversations_path,
 	prompts = [prompts[index] for index in remaining_indices]
 	answers = [answers[index] for index in remaining_indices]
 	if verbose: sys.stderr.write("{} sequences remaining after filtering out test sequences.\n".format(len(prompts)))
-	#print(prompts[:10])
 
 	if contraction_model_path is None:
 		contr_prompts = prompts
@@ -111,11 +112,8 @@ def gen_datasets(lines_path, conversations_path,
 		del model_vectors
 	contraction_exp = SimpleContractions(contraction_model_path)
 
-	#prompts = prompts[:10]
-	#answers = answers[:10]
-
 	joined_text = [token_sequence for token_sequence in prompts+answers] #Concatenate text for cleaning
-	clean_text = _clean(joined_text, contraction_exp, verbose=verbose)
+	clean_text = _clean(joined_text, contraction_exp, num_processes=num_processes, verbose=verbose)
 	(prompts, answers) = (clean_text[:len(prompts)], clean_text[len(prompts):])    #Break text back apart
 	assert len(prompts) == len(answers)
 
@@ -215,28 +213,60 @@ def _generate_sequences(id2line, conv_lines):
 	return (prompts, answers)
 
 
-def _clean(text, contractions_exp, verbose=False):
+
+def _clean_proc(text, contractions_exp, proc_id="0", verbose=False):
 	"""
 	text - list(str) of text sequences
 	contractions_exp - pycontractions.Contractions object for expanding contractions
 	verbose - Print progress messages to stderr (as all those regex's take a while)
 	"""
-	if verbose: sys.stderr.write("Cleaning contractions of {} sequences.\n".format(len(text)))
-
 	i = 0
 	expanded_text = []
 	for expansion in contractions_exp.expand_texts(text, precise=False):
 		expanded_text.append(_punct_filters(expansion))
 		i += 1
 		if verbose and i % 1000 == 0:
-			sys.stderr.write("Cleaned punctuation and contractions of {} sequences.\n".format(i))
-			if i % 50000 == 0:
-				sys.stderr.write("Sample cleaned sequence: {}\n".format(expanded_text[i-1]))
+			sys.stderr.write("Process {}: Cleaned punctuation and contractions of {}/{} sequences.\n"
+					.format(proc_id, i, len(text)))
 
 	tokenized = [nltk.word_tokenize(sequence) for sequence in expanded_text]
 	lowercased = _lowercase_tokens(tokenized)
-	return tokenized
-	
+	return lowercased
+
+def _clean(text, contractions_exp, num_processes=1, verbose=False):
+	if num_processes < 2:
+		sys.stderr.write("Cleaning text with 1 process.\n")
+		return _clean_proc(text, contractions_exp, verbose=verbose)
+
+	partition_size = len(text) // num_processes
+	remainder = len(text) % num_processes
+	partitions = []
+	partitions.append(text[:partition_size + remainder])
+
+	start_index = len(partitions[0])
+	for i in range(1, num_processes):
+		partitions.append( text[start_index:start_index+partition_size] )
+		start_index += partition_size
+	assert sum(len(partition) for partition in partitions) == len(text)
+
+
+	expanders = [contractions_exp]*num_processes
+	proc_ids = [str(i) for i in range(num_processes)]
+	verbosities = [verbose]*num_processes
+	args = zip(partitions, expanders, proc_ids, verbosities)
+
+
+	pool = mp.Pool(processes = num_processes)
+	if verbose: sys.stderr.write("Cleaning text with {} processes.\n".format(num_processes))
+	results = pool.starmap(_clean_proc, args)
+
+
+	cleaned_text = []
+	for result in results:
+		cleaned_text.extend(result)
+	return cleaned_text
+
+
 def _punct_filters(text):
 	text = re.sub(r"\.+", ".", text)     #Ellipses and the like
 	#text = re.sub(r"\. \. \.", ".", text) # I see ellipses in the test set, so I'm leaving them for now
@@ -276,6 +306,7 @@ def _filter_by_length(prompts, answers, min_line_length, max_line_length):
 	        	short_answers.append(answer)
 	        	short_prompts.append(short_prompts_temp[i])
 	return (short_prompts, short_answers)
+
 def _generate_vocab(prompts, answers, max_vocab):
 	"""
 	prompts - A 2-D list of strings
@@ -299,6 +330,7 @@ def _generate_vocab(prompts, answers, max_vocab):
 	else:
 		vocab = sorted_by_freq[:max_vocab]
 	return vocab
+
 def _replace_unknowns(sequences, vocab, unk):
 	"""
 	sequences - A 2-D list of strings
