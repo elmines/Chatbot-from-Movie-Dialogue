@@ -1,4 +1,5 @@
 import pandas as pd
+import sys
 import warnings
 
 def make_testset(category,df,dialogues,responses,cat_type):
@@ -64,11 +65,11 @@ def make_testset(category,df,dialogues,responses,cat_type):
     df_new['indexes'] = pd.DataFrame(indexes)
     return df_new,indexes
 
-def exclude_testset(dialogues, responses):
+def exclude_testset(dialogues, responses, regenerate=True, verbose=True):
 	"""
 	dialogues - list(list(str)) of prompts
 	responses - list(list(str)) of answers
-
+	regenerate - If False, don't generate the test set spreadsheet; just return the remaining indices
 	"""
 
 	df = pd.read_excel(f'./Warriner, Kuperman, Brysbaert - 2013 BRM-ANEW expanded.xlsx')
@@ -89,9 +90,15 @@ def exclude_testset(dialogues, responses):
 	#------------------------#
 	high_dominance, hd_indexes =  make_testset("high",df_dominance,dialogues,responses,"dominance")
 	low_dominance, ld_indexes =  make_testset("low",df_dominance,dialogues,responses,"dominance")
-	
-	df_new = pd.concat([high_valence, low_valence, high_arousal, low_arousal, high_dominance,low_dominance]).reset_index(drop=True)
-	df_new.to_excel('./test_set_removed.xlsx',index=False)
+
+	if regenerate:
+		test_set_path = './test_set_removed.xlsx'
+		df_new = pd.concat([high_valence, low_valence, high_arousal, low_arousal, high_dominance,low_dominance]).reset_index(drop=True)
+		df_new.to_excel(test_set_path, index=False)
+		if verbose:
+			sys.stderr.write("Wrote test set to {}.\n".format(test_set_path))
+	elif verbose:
+		sys.stderr.write("Skipped writing test set to spreadsheet.\n")
 
 	test_indices = hv_indexes + lv_indexes + ha_indexes + la_indexes + hd_indexes + ld_indexes
 	unique_test_indices = set(test_indices)
@@ -101,4 +108,7 @@ def exclude_testset(dialogues, responses):
 
 	return remaining_indices
 
-	
+def test_indices(path):
+	df = pd.read_excel(path)	
+	indices = set( df["indexes"] )
+	return indices

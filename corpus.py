@@ -1,13 +1,15 @@
+#Text preprocessing
 import re
 import nltk
 import gensim
 import pycontractions
 import language_check
 
+#System utilities
 import os
 import sys
 
-import numpy as np #For shuffling
+import numpy as np #For shuffling data
 
 #Local modules
 import testset
@@ -19,7 +21,7 @@ INFINITY = float("inf")
 
 _DEFAULT_MAX_WORDS = 12000
 _DEFAULT_MIN_LINE_LENGTH = 1
-_DEFAULT_MAX_LINE_LENGTH = 60
+_DEFAULT_MAX_LINE_LENGTH = INFINITY
 
 
 _DEFAULT_UNK = "<UNK>"
@@ -73,28 +75,32 @@ def gen_datasets(lines_path, conversations_path,
 			lines_text.append( _line[4] )
 
 
+	"""
 	lines_tokens = _tokenize(lines_text)
-	if verbose: sys.stderr.write("Tokenized text.\n")
-	print(lines_tokens[:5])
+	if verbose:
+		sys.stderr.write("Tokenized text.\n")
+		sys.stderr.write("{}\n".format(lines_tokens[:5]))
 	lines_tokens = _lowercase_tokens(lines_tokens)
-	if verbose: sys.stderr.write("Lowercased text.\n")
-	print(lines_tokens[:5])
+	if verbose:
+		sys.stderr.write("Lowercased text.\n")
+		sys.stderr.write("{}\n".format(lines_tokens[:5]))
+	"""
 
-	id2line = { id_no:line for (id_no, line) in zip(ids, lines_tokens) }
+	id2line = { id_no:line for (id_no, line) in zip(ids, lines_text) }
 	(prompts, answers) = _generate_sequences(id2line, conv_lines)
 	sys.stderr.write("{} dialog exchanges.\n".format(len(prompts)))
 
-	remaining_indices = testset.exclude_testset(prompts, answers)
-
+	remaining_indices = list( set(range(len(prompts))) - set(testset.test_indices("./test_set_removed.xlsx")) )
+	remaining_indices.sort()
 	prompts = [prompts[index] for index in remaining_indices]
 	answers = [answers[index] for index in remaining_indices]
-	sys.stderr.write("{} sequences remaining after filtering out test sequences.\n".format(len(prompts)))
+	if verbose: sys.stderr.write("{} sequences remaining after filtering out test sequences.\n".format(len(prompts)))
+	#print(prompts[:10])
 
-	"""
 	if contraction_model_path is None:
-		contr_prompts = nontest_prompts
-		contr_answers = nontest_answers
-		corpus_tokens = [[token for token in sequence] for sequence in contr_prompts+contr_answers]
+		contr_prompts = prompts
+		contr_answers = answers
+		corpus_tokens = [[token for token in sequence.split(" ")] for sequence in contr_prompts+contr_answers]
 		contraction_model_path = _DEFAULT_CONTR_MODEL
 		contraction_model = gensim.models.Word2Vec(sentences=corpus_tokens, size=1024, window=5, min_count=1, workers=4, sg=0)
 		model_vectors = contraction_model.wv
@@ -104,13 +110,19 @@ def gen_datasets(lines_path, conversations_path,
 		del contraction_model
 		del model_vectors
 	contraction_exp = SimpleContractions(contraction_model_path)
-	clean_text = _clean(lines_text, contraction_exp, verbose=verbose)
-	"""
 
+	#prompts = prompts[:10]
+	#answers = answers[:10]
 
+	joined_text = [token_sequence for token_sequence in prompts+answers] #Concatenate text for cleaning
+	clean_text = _clean(joined_text, contraction_exp, verbose=verbose)
+	(prompts, answers) = (clean_text[:len(prompts)], clean_text[len(prompts):])    #Break text back apart
+	assert len(prompts) == len(answers)
+
+	if verbose: sys.stderr.write("Filtering sequences by length . . .\n")
 	(short_prompts, short_answers) = _filter_by_length(prompts, answers, min_line_length, max_line_length)
 	if verbose:
-		sys.stderr.write("Filtered out sequences with less than {} or more than {} tokens; {} exchanges remaining..\n".format(min_line_length, max_line_length, len(short_prompts)))
+		sys.stderr.write("Filtered out sequences with less than {} or more than {} tokens; {} exchanges remaining.\n".format(min_line_length, max_line_length, len(short_prompts)))
 
 	vocab = [unk] + _generate_vocab(short_prompts, short_answers, max_vocab)
 	vocab2int = {word:index for (index, word) in enumerate(vocab) }
@@ -168,8 +180,6 @@ def gen_datasets(lines_path, conversations_path,
 		write_text(answers_path, answer_lines)
 		if verbose: sys.stderr.write("Wrote {} lines to {}.\n".format(len(answer_lines), answers_path))
 		
-
-
 	vocab_path = os.path.join(output_dir, "vocab.txt")
 	write_vocab(vocab_path, vocab2int)
 	if verbose: sys.stderr.write("Wrote vocabulary to {}.\n".format(vocab_path))
@@ -207,8 +217,11 @@ def _generate_sequences(id2line, conv_lines):
 
 def _clean(text, contractions_exp, verbose=False):
 	"""
+	text - list(str) of text sequences
+	contractions_exp - pycontractions.Contractions object for expanding contractions
+	verbose - Print progress messages to stderr (as all those regex's take a while)
 	"""
-	if verbose: sys.stderr.write("{} sequences to clean.".format(len(text)))
+	if verbose: sys.stderr.write("Cleaning contractions of {} sequences.\n".format(len(text)))
 
 	i = 0
 	expanded_text = []
@@ -217,14 +230,16 @@ def _clean(text, contractions_exp, verbose=False):
 		i += 1
 		if verbose and i % 1000 == 0:
 			sys.stderr.write("Cleaned punctuation and contractions of {} sequences.\n".format(i))
+			if i % 50000 == 0:
+				sys.stderr.write("Sample cleaned sequence: {}\n".format(expanded_text[i-1]))
 
 	tokenized = [nltk.word_tokenize(sequence) for sequence in expanded_text]
 	lowercased = _lowercase_tokens(tokenized)
-	return lowercased
+	return tokenized
 	
 def _punct_filters(text):
 	text = re.sub(r"\.+", ".", text)     #Ellipses and the like
-	text = re.sub(r"\. \. \.", ".", text)
+	#text = re.sub(r"\. \. \.", ".", text) # I see ellipses in the test set, so I'm leaving them for now
 	text = re.sub(r"\-+", "-", text)
 	text = re.sub(r"\?+", "?", text)     #Duplicate end punctuation
 	text = re.sub(r"\!+", "!", text)
@@ -236,7 +251,7 @@ def _tokenize(sequences):
 
 def _lowercase_tokens(tokens):
 	"""
-	tokens - A 2-D list of strings where tokens[i][j] is the jth token of the ith sequence or sentence
+	tokens - list(list(str)) where tokens[i][j] is the jth token of the ith sequence or sentence
 	"""
 	return [[token.lower() if re.match("^[a-zA-Z]+", token) else token for token in sequence] for sequence in tokens]
 	
