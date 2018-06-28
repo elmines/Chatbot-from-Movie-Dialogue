@@ -1,18 +1,18 @@
 import gensim
 import numpy as np
 import pandas as pd
-import nltk
+
 import sys
 import os
 
-_lemmatizer = nltk.stem.WordNetLemmatizer()
-def lemmatize_text(text):
-	return _lemmatizer.lemmatize(str(text))
+import match
 
-def appended_vad(model=None, vocab2int=None, regenerate=True, verbose=True):
+
+def appended_vad(model=None, vocab2int=None, exclude=None, regenerate=True, verbose=True):
 	"""
 	model - a gensim Word2Vec model, already loaded
 	regenerate - Actually create the VAD model, rather than just return a path
+	exclude - list of tokens in vocab2int to assign the neutral vector
 
 	If regenerate is True, model and vocab2int must be specified
 
@@ -27,32 +27,44 @@ def appended_vad(model=None, vocab2int=None, regenerate=True, verbose=True):
 		raise ValueError("Must specify model parameter if generating a VAD-appended model")
 
 	df_vad=pd.read_excel('Warriner, Kuperman, Brysbaert - 2013 BRM-ANEW expanded.xlsx')
-	
-	
+
+	df_vad["Word"] = df_vad["Word"].apply(str)
+	targ_vocab = list(df_vad["Word"])
+
+	mapping = match.vocab_match(model.wv.index2word, targ_vocab, verbose=verbose)
+
+	if exclude is not None:
+		for word in exclude:
+			mapping[word] = None
+
 	list_wordvecs=[]
 	for i,word in enumerate(model.wv.index2word):
     		list_wordvecs.append(word)
 	
-	list_vad = set(df_vad['Word'])
-	df_vad['Lemma_Word'] = df_vad.Word.apply(lemmatize_text)
-
 	word_vecs_vad = np.zeros((len(model.wv.vocab),1027))
 	count_vad=0
 	count_neutral=0
+
 	for i,word in enumerate(model.wv.index2word):
-		lemma = lemmatize_text(word)
-		if lemma in set(df_vad['Lemma_Word']):
-			count_vad=count_vad+1
+		target_word = mapping[word]
+		if target_word is not None:
+			if verbose:
+				sys.stdout.write("VAD Values Assigned: {} --> {}\n".format(word, target_word))
+			count_vad += 1
 			word_vecs_vad[vocab2int[word]][0:1024] = model[word]
-			word_vecs_vad[vocab2int[word]][1024]=df_vad.loc[df_vad['Lemma_Word'] == lemma, 'V.Mean.Sum'].iloc[0]
-			word_vecs_vad[vocab2int[word]][1025]=df_vad.loc[df_vad['Lemma_Word'] == lemma, 'A.Mean.Sum'].iloc[0]
-			word_vecs_vad[vocab2int[word]][1026]=df_vad.loc[df_vad['Lemma_Word'] == lemma, 'D.Mean.Sum'].iloc[0]
+			word_vecs_vad[vocab2int[word]][1024] = df_vad.loc[df_vad['Word'] == target_word, 'V.Mean.Sum'].iloc[0]
+			word_vecs_vad[vocab2int[word]][1025] = df_vad.loc[df_vad['Word'] == target_word, 'A.Mean.Sum'].iloc[0]
+			word_vecs_vad[vocab2int[word]][1026] = df_vad.loc[df_vad['Word'] == target_word, 'D.Mean.Sum'].iloc[0]
+
+
 		else:
-        		count_neutral=count_neutral+1
-        		word_vecs_vad[vocab2int[word]][0:1024] = model[word]
-        		word_vecs_vad[vocab2int[word]][1024]=5
-        		word_vecs_vad[vocab2int[word]][1025]=1
-        		word_vecs_vad[vocab2int[word]][1026]=5
+			if verbose:
+				sys.stdout.write("Neutral Vector Assigned: {}\n".format(word))
+			count_neutral += 1
+			word_vecs_vad[vocab2int[word]][0:1024] = model[word]
+			word_vecs_vad[vocab2int[word]][1024]   = 5
+			word_vecs_vad[vocab2int[word]][1025]   = 1
+			word_vecs_vad[vocab2int[word]][1026]   = 5
 
 	if verbose:
 		sys.stderr.write("{}/{} words assigned corresponsing VAD values.\n".format(count_vad, len(model.wv.vocab)))

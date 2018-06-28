@@ -7,6 +7,7 @@ A chatbot for emotional dialog generation built in TensorFlow 1.7 and modeled af
 - [gensim](https://pypi.org/project/gensim/)
 - [nltk](https://pypi.org/project/nltk/)
   - punkt
-  - wordnet
+- [spaCy](https://pypi.org/project/spacy/)
+  - en\_core\_web\_sm
 - [pycontractions](https://pypi.org/project/pycontractions/)
 
