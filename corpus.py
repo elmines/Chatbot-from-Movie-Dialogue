@@ -76,18 +76,6 @@ def gen_datasets(lines_path, conversations_path,
 			ids.append(_line[0])
 			lines_text.append( _line[4] )
 
-
-	"""
-	lines_tokens = _tokenize(lines_text)
-	if verbose:
-		sys.stderr.write("Tokenized text.\n")
-		sys.stderr.write("{}\n".format(lines_tokens[:5]))
-	lines_tokens = _lowercase_tokens(lines_tokens)
-	if verbose:
-		sys.stderr.write("Lowercased text.\n")
-		sys.stderr.write("{}\n".format(lines_tokens[:5]))
-	"""
-
 	id2line = { id_no:line for (id_no, line) in zip(ids, lines_text) }
 	(prompts, answers) = _generate_sequences(id2line, conv_lines)
 	sys.stderr.write("{} dialog exchanges.\n".format(len(prompts)))
@@ -101,7 +89,7 @@ def gen_datasets(lines_path, conversations_path,
 	if contraction_model_path is None:
 		contr_prompts = prompts
 		contr_answers = answers
-		corpus_tokens = [[token for token in sequence.split(" ")] for sequence in contr_prompts+contr_answers]
+		corpus_tokens = [[token for token in sequence.split()] for sequence in contr_prompts+contr_answers]
 		contraction_model_path = _DEFAULT_CONTR_MODEL
 		contraction_model = gensim.models.Word2Vec(sentences=corpus_tokens, size=1024, window=5, min_count=1, workers=4, sg=0)
 		model_vectors = contraction_model.wv
@@ -111,6 +99,7 @@ def gen_datasets(lines_path, conversations_path,
 		del contraction_model
 		del model_vectors
 	contraction_exp = SimpleContractions(contraction_model_path)
+
 
 	joined_text = [token_sequence for token_sequence in prompts+answers] #Concatenate text for cleaning
 	clean_text = _clean(joined_text, contraction_exp, num_processes=num_processes, verbose=verbose)
@@ -139,25 +128,6 @@ def gen_datasets(lines_path, conversations_path,
 
 	full_prompts = shuffled_prompts
 	full_answers = shuffled_answers
-
-	"""
-	num_train = int(partition[0] * len(full_prompts))
-	num_valid = int(partition[1] * len(full_prompts))
-	train_indices = (0, num_train)
-	valid_indices = (num_train, len(full_prompts))
-	for (purpose, indices) in zip( ["train", "valid"], [train_indices, valid_indices] ):
-		#Don't write a file if we didn't partition any data for that purpose
-		if indices[1] > indices[0]:
-			prompt_lines = full_prompts[indices[0]:indices[1]]
-			prompts_path = os.path.join(output_dir, purpose + "_prompts.txt")
-			write_text(prompts_path, prompt_lines)
-			if verbose: sys.stderr.write("Wrote {} lines to {}.\n".format(indices[1] - indices[0], prompts_path))
-	
-			answer_lines = full_answers[indices[0]:indices[1]]
-			answers_path = os.path.join(output_dir, purpose + "_answers.txt")
-			write_text(answers_path, answer_lines)
-			if verbose: sys.stderr.write("Wrote {} lines to {}.\n".format(indices[1] - indices[0], answers_path))
-	"""
 
 	train_indices = []
 	valid_indices = []
@@ -223,13 +193,16 @@ def _clean_proc(text, contractions_exp, proc_id="0", verbose=False):
 	i = 0
 	expanded_text = []
 	for expansion in contractions_exp.expand_texts(text, precise=False):
-		expanded_text.append(_punct_filters(expansion))
+		expanded_text.append(expansion)
 		i += 1
 		if verbose and i % 1000 == 0:
-			sys.stderr.write("Process {}: Cleaned punctuation and contractions of {}/{} sequences.\n"
+			sys.stderr.write("Process {}: Cleaned contractions of {}/{} sequences.\n"
 					.format(proc_id, i, len(text)))
 
-	tokenized = [nltk.word_tokenize(sequence) for sequence in expanded_text]
+	filtered = [_gen_filter(expansion) for expansion in expanded_text]
+	filtered = [_web_filter(sequence) for sequence in filtered]
+	filtered = [_misc_filter(sequence) for sequence in filtered]
+	tokenized = _tokenize(filtered)
 	lowercased = _lowercase_tokens(tokenized)
 	return lowercased
 
@@ -255,29 +228,44 @@ def _clean(text, contractions_exp, num_processes=1, verbose=False):
 	verbosities = [verbose]*num_processes
 	args = zip(partitions, expanders, proc_ids, verbosities)
 
-
 	pool = mp.Pool(processes = num_processes)
 	if verbose: sys.stderr.write("Cleaning text with {} processes.\n".format(num_processes))
 	results = pool.starmap(_clean_proc, args)
-
 
 	cleaned_text = []
 	for result in results:
 		cleaned_text.extend(result)
 	return cleaned_text
 
-
-def _punct_filters(text):
-	text = re.sub(r"\.+", ".", text)     #Ellipses and the like
+def _gen_filter(text):
+	text = re.sub(r'[\?\.\!\-]+(?=[\?\.\!\-])', '', text) #Duplicate end punctuation
+	text = re.sub( '\s+', ' ', text ).strip()             #Replace special whitespace characters with simple spaces
 	#text = re.sub(r"\. \. \.", ".", text) # I see ellipses in the test set, so I'm leaving them for now
-	text = re.sub(r"\-+", "-", text)
-	text = re.sub(r"\?+", "?", text)     #Duplicate end punctuation
-	text = re.sub(r"\!+", "!", text)
 
 	return text
 
+def _misc_filter(text):
+	if np.random.random() < 0.90: #Use shall 10% of the time
+		text = re.sub("shall", "will", text)
+	return text
+
+def _web_filter(text):
+	text = re.sub("&quot;", ' " ', text)         
+	text = re.sub("&amp;", ' & ', text)          
+	text = re.sub("(<.*?>)|(&.*?;)", "", text)  
+	return text
+
+
 def _tokenize(sequences):
-	return [nltk.word_tokenize(sequence) for sequence in sequences]
+	tok_sequences = []
+	for sequence in sequences:
+		text = " ".join(nltk.word_tokenize(sequence))
+		text = re.sub("can not", "cannot", text) #The Penn Treebannk tokenizer splits cannot into "can" and "not"
+		text = re.sub("(``)|('')", ' " ', text)    #It also replaces opening double quotes with `` and closing ones with ''
+		tok_sequences.append(text.split())
+
+	return tok_sequences
+
 
 def _lowercase_tokens(tokens):
 	"""
