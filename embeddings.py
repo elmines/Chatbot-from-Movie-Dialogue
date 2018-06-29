@@ -5,10 +5,23 @@ import pandas as pd
 import sys
 import os
 
+#Local modules
 import match
 
+def w2vec(model_path, text, vocab2int, embedding_size=1024, verbose=True):
+	if verbose: sys.stderr.write("Learning Word2Vec embeddings on {} sequences . . .\n".format(len(text)))
+	model = gensim.models.Word2Vec(sentences=text, size=embedding_size, window=5, min_count=1, workers=4, sg=0)
+	word_vecs = np.zeros((len(model.wv.vocab),embedding_size))
+	for i,word in enumerate(model.wv.index2word):
+        	word_vecs[vocab2int[word]] = model[word]
 
-def appended_vad(model=None, vocab2int=None, exclude=None, regenerate=True, verbose=True):
+	np.save(model_path,word_vecs)
+	if verbose: sys.stderr.write("Wrote Word2Vec model to {}\n".format(model_path))
+
+	return word_vecs
+
+
+def appended_vad(model_path, embeddings, vocab2int, exclude=None, verbose=True):
 	"""
 	model - a gensim Word2Vec model, already loaded
 	regenerate - Actually create the VAD model, rather than just return a path
@@ -19,59 +32,48 @@ def appended_vad(model=None, vocab2int=None, exclude=None, regenerate=True, verb
 	Returns
 		A path to an .npy file containing the word embeddings
 	"""
-
-	model_path = os.path.join("word_Vecs_VAD.npy")
-	if not regenerate: return model_path
-
-	if (model is None) or (vocab2int is None):
-		raise ValueError("Must specify model parameter if generating a VAD-appended model")
+	
+	#Simple list of vocabulary items at their proper indices
+	int2vocab = sorted(vocab2int.keys(), key=vocab2int.__getitem__)
 
 	df_vad=pd.read_excel('Warriner, Kuperman, Brysbaert - 2013 BRM-ANEW expanded.xlsx')
-
 	df_vad["Word"] = df_vad["Word"].apply(str)
 	targ_vocab = list(df_vad["Word"])
 
-	mapping = match.vocab_match(model.wv.index2word, targ_vocab, verbose=verbose)
-
+	mapping = match.vocab_match(int2vocab, targ_vocab, verbose=verbose)
 	if exclude is not None:
 		for word in exclude:
 			mapping[word] = None
 
-	list_wordvecs=[]
-	for i,word in enumerate(model.wv.index2word):
-    		list_wordvecs.append(word)
-	
-	word_vecs_vad = np.zeros((len(model.wv.vocab),1027))
+	embedding_size = embeddings.shape[1]
+	word_vecs_vad = np.zeros( (len(vocab2int), embedding_size+3) )
 	count_vad=0
 	count_neutral=0
-
-	for i,word in enumerate(model.wv.index2word):
+	for word in int2vocab:
 		target_word = mapping[word]
+		index = vocab2int[word]
 		if target_word is not None:
-			if verbose:
-				sys.stdout.write("VAD Values Assigned: {} --> {}\n".format(word, target_word))
+			if verbose: sys.stderr.write("VAD Values Assigned: {} --> {}\n".format(word, target_word))
 			count_vad += 1
-			word_vecs_vad[vocab2int[word]][0:1024] = model[word]
-			word_vecs_vad[vocab2int[word]][1024] = df_vad.loc[df_vad['Word'] == target_word, 'V.Mean.Sum'].iloc[0]
-			word_vecs_vad[vocab2int[word]][1025] = df_vad.loc[df_vad['Word'] == target_word, 'A.Mean.Sum'].iloc[0]
-			word_vecs_vad[vocab2int[word]][1026] = df_vad.loc[df_vad['Word'] == target_word, 'D.Mean.Sum'].iloc[0]
-
-
+			word_vecs_vad[index][:-3] = embeddings[index]
+			word_vecs_vad[index][-3] = df_vad.loc[df_vad['Word'] == target_word, 'V.Mean.Sum'].iloc[0]
+			word_vecs_vad[index][-2] = df_vad.loc[df_vad['Word'] == target_word, 'A.Mean.Sum'].iloc[0]
+			word_vecs_vad[index][-1] = df_vad.loc[df_vad['Word'] == target_word, 'D.Mean.Sum'].iloc[0]
 		else:
-			if verbose:
-				sys.stdout.write("Neutral Vector Assigned: {}\n".format(word))
+			if verbose: sys.stderr.write("Neutral Vector Assigned: {}\n".format(word))
 			count_neutral += 1
-			word_vecs_vad[vocab2int[word]][0:1024] = model[word]
-			word_vecs_vad[vocab2int[word]][1024]   = 5
-			word_vecs_vad[vocab2int[word]][1025]   = 1
-			word_vecs_vad[vocab2int[word]][1026]   = 5
+			word_vecs_vad[index][:-3] = embeddings[index]
+			word_vecs_vad[index][-3]   = 5
+			word_vecs_vad[index][-2]   = 1
+			word_vecs_vad[index][-1]   = 5
+
+	np.save(model_path,word_vecs_vad)
 
 	if verbose:
-		sys.stderr.write("{}/{} words assigned corresponsing VAD values.\n".format(count_vad, len(model.wv.vocab)))
-		sys.stderr.write("{}/{} words assigned the neutral VAD vector.\n".format(count_neutral, len(model.wv.vocab)))
+		sys.stderr.write("{}/{} words assigned corresponsing VAD values.\n".format(count_vad, len(vocab2int)))
+		sys.stderr.write("{}/{} words assigned the neutral VAD vector.\n".format(count_neutral, len(vocab2int)))
 	
-	np.save(model_path,word_vecs_vad)
-	return model_path
+	return word_vecs_vad
 
 
 def counterfitted(model=None, vocab2int=None, regenerate=True):
