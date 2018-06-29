@@ -1,65 +1,12 @@
 import tensorflow as tf
 import numpy as np
+import sys
 
 
-###########SAMPLLING OUTPUT##############
-#FIXME: padding parameters
-def show_response(prompt_int, prediction, answer_int = None):
-    pad_q = METATOKEN_INDEX
-    print("Prompt")
-    print("  Word Ids: {}".format([i for i in prompt_int if i != pad_q]))
-    print("      Text: {}".format(int_to_text(prompt_int, prompts_int_to_vocab)))
-    
-    pad_a = METATOKEN_INDEX
-    if answer_int is not None:
-        print("Target Answer")
-        print("  Word Ids: {}".format([i for i in answer_int if i != pad_a]))
-        print("      Text: {}".format(int_to_text(answer_int, answers_int_to_vocab)))
-
-    print("\nPrediction")
-    print('  Word Ids: {}'.format([i for i in prediction if i != pad_a]))
-    print('      Text: {}'.format(int_to_text(prediction, answers_int_to_vocab)))
-        
-#FIXME: padding parameters
-def check_response(session, prompt_int, answer_int=None):
-    """
-    session - the TensorFlow session
-    question_int - a list of integers
-    answer - the actual, correct response (if available)
-    """
-    
-    two_d_prompt_int = [prompt_int]
-    p_lengths = [len(prompt_int)]
-    
-    [infer_ids_output] = session.run([infer_ids], feed_dict = {input_data: np.array(two_d_prompt_int, dtype=np.float32),
-                                                      source_lengths: p_lengths,
-                                                      keep_prob: 1})
-    
-    show_response(prompt_int, infer_ids_output[0], answer_int)
 
 
 ############FEEDDING DATA################
-#FIXME: padding parameters
-def pad_sentence_batch(sentence_batch, vocab_to_int):
-    """Pad sentences with <PAD> so that each sentence of a batch has the same length"""
-    pad_int = METATOKEN_INDEX
-    max_sentence_length = max([len(sentence) for sentence in sentence_batch])
-    return [sentence + [pad_int] * (max_sentence_length - len(sentence)) for sentence in sentence_batch]
 
-#FIXME: padding parameters
-def batch_data(questions, answers, batch_size):
-    """Batch questions and answers together"""
-    for batch_i in range(0, len(questions)//batch_size):
-        start_i = batch_i * batch_size
-        questions_batch = questions[start_i:start_i + batch_size]
-        answers_batch = answers[start_i:start_i + batch_size]
-        
-        source_lengths = np.array( [len(sentence) for sentence in questions_batch] )
-        target_lengths = np.array( [len(sentence) for sentence in answers_batch])
-        
-        pad_questions_batch = np.array(pad_sentence_batch(questions_batch, questions_vocab_to_int))
-        pad_answers_batch = np.array(pad_sentence_batch(answers_batch, answers_vocab_to_int))
-        yield source_lengths, target_lengths, pad_questions_batch, pad_answers_batch
 
 def parallel_shuffle(source_sequences, target_sequences):
     if len(source_sequences) != len(target_sequences):
@@ -71,136 +18,183 @@ def parallel_shuffle(source_sequences, target_sequences):
     return (shuffled_source, shuffled_target)
 
 ############LOGGING###################
-def log_entries(csv_path, *fields, header = False):
-    if len(fields[0]) < 1: return
-    mode = "w" if header else "a"
-    with open(csv_path, mode, encoding="utf-8") as log:
-        lines = []
-        num_lines = len(fields[0])
-        lines = "\n".join(",".join([str(field[i]) for field in fields]) 
-                          for i in range(num_lines)
-        )
-        log.write(lines + "\n")
 def clear_fields(log_fields):
     for field in log_fields:
         field.clear()
 
 
-def training_loop(epoch_no, max_epochs, placeholders, train_op, train_loss, valid_loss, saver, best_valid_loss=float("inf"), best_model_path=None, latest_model_path=None, train_log=None, valid_log=None, new_logs=False, early_stopping=True):
+#This function runs in quadratic time and was not meant for scalability
+def merge_dicts(*dicts):
+	merged = {}
+	for dictionary in dicts:
+		for key in dictionary:
+			if key in merged.keys():
+				raise ValueError("{} is in more than one dictionary".format(key))
+			merged[key] = dictionary[key]
+	return merged
+
+
+def pad_sentence_batch(sentence_batch, pad_token):
+    """Pad sentences with <PAD> so that each sentence of a batch has the same length"""
+    max_sentence_length = max([len(sentence) for sentence in sentence_batch])
+    return [sentence + [pad_token] * (max_sentence_length - len(sentence)) for sentence in sentence_batch]
+
+def batch_data(data_placeholders, questions_int, answers_int, batch_size, pad_token):
 	"""
-	placeholders - a models.Placeholders named tuple
-	train_op - Train operation to be called with sess.run
-	train_loss - Scalar loss node to be computed with sess.run
-	valid_loss - Scalar loss node to be computed with sess.run
+	data_placeholders - a tf_collections.DataPlaceholders object
+
 	Returns
-		- (float) The number of epochs spent training
+		a feed dictionary with mapping data_placeholders to a batch
+	"""
+	for batch_i in range(0, len(questions)//batch_size):
+		start_i = batch_i * batch_size
+		questions_batch = questions[start_i:start_i + batch_size]
+		answers_batch = answers[start_i:start_i + batch_size]
+        
+		source_lengths = np.array( [len(sentence) for sentence in questions_batch] )
+		target_lengths = np.array( [len(sentence) for sentence in answers_batch])
+
+		pad_prompts_batch = np.array(pad_sentence_batch(questions_batch, pad_token))
+		pad_answers_batch = np.array(pad_sentence_batch(answers_batch, pad_token))
+
+		#DataPlaceholder variables
+		feed_dict = {
+				placeholders.input_data     : pad_prompts_batch,
+				placeholders.targets        : pad_answers_batch,
+				placeholders.source_lengths : source_lengths,
+				placeholders.target_lengths : target_lengths
+			}
+
+		yield feed_dict
+
+#FIXME: Add support for logging
+class Trainer(object):
+	"""
+	Class describing the state of a models.Seq2Seq's training
+	"""
+
+	self.record = float("inf")
+
+	def __init__(model, best_model_path, latest_model_path, epochs_completed=0, max_epochs=50, min_epochs_before_validation=2, best_valid_cost = float("inf"), saver=None, stalled_steps = 0, max_stalled_steps=float("inf"))
+
+		self._saver = tf.train.Saver()
+		self._best_model_path = best_model_path
+		self._latest_model_path = latest_model_path
+
+		self._epochs_completed = epochs_completed
+		self._max_epochs = max_epochs
+		self._min_epochs_before_validation = min_epochs_before_validation
+
+		self._record_valid_cost = best_valid_cost
+		self._saver = saver if saver is not None else tf.train.Saver()
+
+		
+		self._stalled_steps = 0
+		self._max_stalled_steps = max_stalled_steps
+
+
+	def save_latest(self, sess):
+		self._saver.save(sess, self._latest_model_path)	
+
+	def check_validation_loss(self, sess, validation_cost):
+		if not( validation_cost >= self.record ):
+			self.record = record
+			self._saver.save(sess, self._best_model_path)
+			print("New record for validation loss--saved to {}".format(self._best_model_path))
+		else:
+			self._stalled_steps += 1
+
+	def inc_epochs_completed(self):
+		self._epochs_completed += 1
+
+	@property
+	def epochs_completed(self):
+		return self._epochs_completed
+		
+
+def training_loop(sess, model, trainer, datasets, text_data,
+			
+			train_feeds=None, valid_feeds=None, ,
+			train_batch_size=64, valid_batch_size=64):
+	"""
+	data_placeholders - a tf_collections.DataPlaceholders namedtuple
+	fetches = a tf_collections.Fetches namedtuple	
+	train_feeds - a dictionary of extra feed-value pairs when calling sess.run for training
+	valid_feeds - the validation analog of train_feeds
+	Returns
+		- (float) The current epoch_no
 		- (float) The best validation loss computed
 	"""
 
-	train_epoch_nos = []
-	train_batch_tokens = [] #Number of tokens in a batch
-	train_batch_losses = [] #Per-token loss for a batch
-	train_log_fields = [train_epoch_nos, train_batch_tokens, train_batch_losses]
+	data_placeholders = model.data_placeholders
+
+	#Actual data
+	(train_prompts_int, train_answers_int) = (datasets.train_prompts_int, datasets.train_answers_int)
+	(valid_prompts_int, valid_answers_int) = (datasets.valid_prompts_int, datasets.valid_answers_int)
+
+	(prompts_int_to_vocab, answers_int_to_vocab) = text_data.prompts_int_to_vocab, text_data.answers_int_to_vocab
+	(unk_int, pad_int) = text_data.unk_int, text_data.pad_int
 	
-	valid_epoch_nos = []
-	valid_check_nos = []
-	valid_batch_tokens = []
-	valid_batch_losses = []
-	valid_log_fields = [valid_epoch_nos, valid_check_nos, valid_batch_tokens, valid_batch_losses]
+
+	#Operations to pass to sess.run
+	(train_op, train_cost, valid_cost) = (model.train_op, model.train_cost, model.valid_cost)
+	infer_ids = model.infer_ids
+
+
+	display_step = len(train_prompts_int) // 10
+
 	
-	train_start_time = None #For logging time for sets of batches
-	if new_logs:
-		log_entries(train_log, ["epoch"], ["num_tokens"], ["loss_per_token"], header=True)
-	log_entries(valid_log, ["epoch"], ["check"], ["num_tokens"], ["loss_per_token"], header=True)
-	print("Initialized empty training log {}, validation log {}".format(train_log, valid_log))
-	
-	
-	with tf.Session() as sess:
-	    sess.run(tf.global_variables_initializer())
-	    tf.train.Saver().save(sess, checkpoint_latest)
-	    print("Initialized model parameters, wrote initial model to {}".format(checkpoint_latest))
-	    if not use_affect_func: print("Beginning training with cross-entropy loss.")
-	    else:                   print("Beginning training with {}".format(affect_function))
-	    for epoch_i in range(1, epochs+1):
-	        if not use_affect_func and epoch_i > epochs_before_affective_loss:
-	            print("Switching from cross-entropy loss to {}".format(affect_function))
-	            use_affect_func = True        
-	        
-	        print("Shuffling training data . . .")
-	        (train_prompts_int, train_answers_int) = parallel_shuffle(train_prompts_int, train_answers_int)
-	        
-	        valid_check_no = 1
-	        
-	        
-	        for batch_i, (p_lengths, a_lengths, prompts_batch, answers_batch) in enumerate(
-	                batch_data(train_prompts_int, train_answers_int, train_batch_size)):
-	            if train_start_time is None: train_start_time = time.time()
-	            
-	            #VALIDATION CHECK
-	            if batch_i % validation_check == 0 and epoch_i > min_epochs_before_validation:
-	                print("Shuffling validation data . . .")
-	                (valid_prompts_int, valid_answers_int) = parallel_shuffle(valid_prompts_int, valid_answers_int)
-	                
-	                clear_fields(valid_log_fields)
-	
-	                
-	                valid_start_time = time.time()
-	                for batch_ii, (p_lengths, a_lengths, prompts_batch, answers_batch) in \
-	                        enumerate(batch_data(valid_prompts_int, valid_answers_int, valid_batch_size)):
-	
-	                    [valid_loss] = sess.run([perplexity],
-	                        {input_data: prompts_batch, targets: answers_batch,
-	                        source_lengths: p_lengths, target_lengths: a_lengths, keep_prob: 1})
-	                    valid_epoch_nos.append(epoch_i)
-	                    valid_check_nos.append(valid_check_no)
-	                    valid_batch_tokens.append(sum(a_lengths))
-	                    valid_batch_losses.append(valid_loss)
-	
-	                
-	                valid_check_no += 1
-	                duration = time.time() - valid_start_time
-	                avg_valid_loss = sum(loss*tokens 
-	                        for (loss, tokens) in zip(valid_batch_losses, valid_batch_tokens)) / sum(valid_batch_tokens)
-	                
-	                log_entries(valid_log, *(valid_log_fields))
-	                clear_fields(valid_log_fields)
-	                print("Processed validation set in {:>4.2f} seconds".format(duration))
-	                print("Average perplexity per token = {}".format(avg_valid_loss))
-	                if avg_valid_loss >= best_valid_loss:
-	                    print("No improvement for validation loss.")
-	                else:
-	                    best_valid_loss = avg_valid_loss
-	                    print("New record for validation loss!")
-	                    print("Saving best model to {}".format(checkpoint_best))
-	                    tf.train.Saver().save(sess, checkpoint_best)
-	                check_response(sess, prompts_batch[-1], answers_batch[-1])
-	                
-	                train_start_time = time.time()
-	            
-	            #TRAINING
-	            _, loss = sess.run([train_op, train_cost],
-	                {input_data: prompts_batch, targets: answers_batch,
-	                 source_lengths: p_lengths, target_lengths: a_lengths,
-	                 keep_prob: keep_probability,
-	                 train_affect: use_affect_func})
-	            train_epoch_nos.append(epoch_i)
-	            train_batch_losses.append(loss)
-	            train_batch_tokens.append(sum(a_lengths))
-	            
-	            if batch_i % display_step == 0:
-	                duration = time.time() - train_start_time
-	                avg_train_loss = sum(loss*tokens 
-	                        for (loss, tokens) in zip(train_batch_losses, train_batch_tokens)) / sum(train_batch_tokens)
-	                    
-	                log_entries(train_log, *(train_log_fields))
-	                clear_fields(train_log_fields)
-	                print('Epoch {:>3}/{} Batch {:>4}/{} - Loss-per-Token: {:>9.6f}, Seconds: {:>4.2f}'
-	                      .format(epoch_i, epochs, batch_i, len(train_prompts_int) // train_batch_size, 
-	                              avg_train_loss, duration),
-	                         flush=True)
-	                train_start_time = time.time()
-	
-	        print("{} epochs completed, saving model to {}".format(epoch_i, checkpoint_latest))
-	        tf.train.Saver().save(sess, checkpoint_latest)
-	        log_entries(train_log, *(train_log_fields))
-	        clear_fields(train_log_fields)
+	#FIXME: For simplicity's sake we're just performing validation after each epoch
+	epoch_i = epochs_completed + 1
+	stalled_steps = 0
+	while (stalled_steps < max_stalled_steps) and (epoch_i <= max_epochs):
+		print("Shuffling training data . . .")
+		(train_prompts_int, train_answers_int) = parallel_shuffle(train_prompts_int, train_answers_int)
+
+		valid_check_no = 1
+		train_start_time = time.time()
+		for batch_i, feed_dict in \
+			enumerate(batch_data(data_placeholders, train_prompts_int, train_answers_int, train_batch_size, pad_int)):
+    
+			augmented_feed_dict = merge_dicts(feed_dict, train_feeds)
+			_, loss = sess.run([train_op, train_cost], augmented_feed_dict)
+    
+			if batch_i % display_step == 0:
+				duration = time.time() - train_start_time
+				avg_train_cost = sum(loss*tokens 
+							for (loss, tokens) in zip(train_batch_losses, train_batch_tokens)) / sum(train_batch_tokens)
+            
+        			print('Epoch {:>3}/{} Batch {:>4}/{} - Loss-per-Token: {:>9.6f}, Seconds: {:>4.2f}'
+              				.format(epoch_i, max_epochs, batch_i, len(train_prompts_int) // train_batch_size, avg_train_cost, duration),
+                 			flush=True)
+        			train_start_time = time.time()
+
+    			#VALIDATION CHECK
+    			if epoch_i > min_epochs_before_validation:
+        			print("Shuffling validation data . . .")
+        			(valid_prompts_int, valid_answers_int) = parallel_shuffle(valid_prompts_int, valid_answers_int)
+        
+        			valid_start_time = time.time()
+        			for batch_ii, feed_dict in enumerate(batch_data(data_placeholders, valid_prompts_int, valid_answers_int, valid_batch_size, pad_int)):
+					augmented_feed_dict = merge_dicts(feed_dict, valid_feeds)
+
+
+				if batch_i == 0:
+					loss, infer_ids_output = sess.run([valid_cost, infer_ids], augmented_feed_dict)
+				else:
+            				[loss] = sess.run([valid_cost],augmented_feed_dict)
+        			valid_check_no += 1
+        			duration = time.time() - valid_start_time
+        			avg_valid_cost = sum(loss*tokens for (loss, tokens) in zip(valid_batch_losses, valid_batch_tokens)) / sum(valid_batch_tokens)
+        
+        			print("Processed validation set in {:>4.2f} seconds".format(duration))
+        			print("Loss-per-Token = {}".format(avg_valid_cost))
+				trainer.check_validation_loss(sess, avg_valid_cost)
+                
+
+			print("{}/{} epochs completed, saving model to {}".format(epoch_i, max_epochs, checkpoint_latest))
+			trainer.save_latest(sess)
+
+			epoch_i += 1
+
+	return epoch_i-1, best_valid_loss
