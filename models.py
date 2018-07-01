@@ -179,13 +179,11 @@ class VADAppended(Seq2Seq):
 				num_layers=num_layers,rnn_size=rnn_size,attn_size=attn_size,output_layer=output_layer, learning_rate=learning_rate)
 
 		emot_embeddings = full_embeddings[:, -3: ]
-
 		neutral_vector = tf.constant([5.0, 1.0, 5.0], dtype=tf.float32)
 		affective_loss = loss_functions.max_affective_content(affect_strength, self.train_logits, self.targets, emot_embeddings, neutral_vector, self.eval_mask)
-		
-		self._train_affect = tf.Variable(False, trainable=False, dtype=tf.bool)
-		
+		self._train_affect = tf.placeholder_with_default(False, shape=())
 		self._train_cost = tf.cond(self._train_affect, true_fn= lambda: affective_loss, false_fn= lambda: self.xent)
+
 		gradients = self.optimizer.compute_gradients(self._train_cost)
 		capped_gradients = [(tf.clip_by_value(grad, -5., 5.), var) for grad, var in gradients if grad is not None]
 		self._train_op = self.optimizer.apply_gradients(capped_gradients)

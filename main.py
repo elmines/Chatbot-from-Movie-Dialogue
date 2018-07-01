@@ -1,28 +1,18 @@
 import sys
-
-#sys.path.insert(0, "/users/emines/.local/lib/python3.5/site-packages/")
-
-sys.path.append("/users/emines/.local/lib/python3.5/site-packages/")
-
 import tensorflow as tf
 sys.stderr.write("TensorFlow {}\n".format(tf.VERSION))
-
 import numpy as np
 import os
 import time
-
-
-
-SEED = 1
-np.random.seed(SEED)
-tf.set_random_seed(SEED)
-
 #Local modules
 import loader
 import models
 import training
 import tf_collections
 
+SEED = 1
+np.random.seed(SEED)
+tf.set_random_seed(SEED)
 
 def word_vecs_with_meta(wordVecs):
 	"""
@@ -65,10 +55,11 @@ def vad_appended_experiment(regen_embeddings=False, data_dir="corpora/", w2vec_p
 	train_answers_int = append_eos(train_answers_int, eos_token)
 	valid_answers_int = append_eos(valid_answers_int, eos_token)
 
-	tf.reset_default_graph()
-	data_placeholders = models.create_placeholders()
-	output_layer = tf.layers.Dense(len(wordVecsWithMeta),bias_initializer=tf.zeros_initializer(),activation=tf.nn.relu)
-	model = models.VADAppended(data_placeholders, wordVecsWithMeta, go_token, eos_token, output_layer=output_layer)
+	datasets = tf_collections.Datasets(train_prompts_int=train_prompts_int,
+						train_answers_int=train_answers_int,
+						valid_prompts_int=valid_prompts_int,
+						valid_answers_int=valid_answers_int
+					)
 
 	#Used to make unique directories, not to identify when a model is saved
 	time_string = time.strftime("%b%d_%H:%M:%S")
@@ -76,38 +67,39 @@ def vad_appended_experiment(regen_embeddings=False, data_dir="corpora/", w2vec_p
 	if not os.path.exists(checkpoint_dir): os.makedirs(checkpoint_dir)
 	checkpoint_best = str(checkpoint_dir) + "/" + "best_model.ckpt" 
 	checkpoint_latest = str(checkpoint_dir) + "/" + "latest_model.ckpt"
+	sys.stderr.write("Writing all model files to {}\n".format(checkpoint_dir))
+
+	tf.reset_default_graph()
+	data_placeholders = models.create_placeholders()
+	output_layer = tf.layers.Dense(len(wordVecsWithMeta),bias_initializer=tf.zeros_initializer(),activation=tf.nn.relu)
+	model = models.VADAppended(data_placeholders, wordVecsWithMeta, go_token, eos_token, output_layer=output_layer, affect_strength = 0.2)
 
 
-	datasets = tf_collections.Datasets(train_prompts_int=train_prompts_int,
-						train_answers_int=train_answers_int,
-						valid_prompts_int=valid_prompts_int,
-						valid_answers_int=valid_answers_int
-					)
-	trainer = training.Trainer(checkpoint_best, checkpoint_latest, max_stalled_steps = 5)
-	text_data = tf_collections.TextData(prompts_int2vocab=int2vocab, answers_int2vocab=int2vocab, unk_int=unk_int, eos_int=eos_token, pad_int=pad_token)
-
-	xent_epochs = 40
+	xent_epochs = 8
 	train_feeds = {model.keep_prob: 0.75}
 	valid_feeds = {model.keep_prob: 1}
 
-	with tf.Session(config=tf.ConfigProto(log_device_placement=False)) as sess:
+	trainer = training.Trainer(checkpoint_best, checkpoint_latest, max_epochs=xent_epochs)
+	text_data = tf_collections.TextData(prompts_int2vocab=int2vocab, answers_int2vocab=int2vocab, unk_int=unk_int, eos_int=eos_token, pad_int=pad_token)
+
+	with tf.Session() as sess:
 		sess.run(tf.global_variables_initializer())
-		epochs_completed, best_valid_loss = training.training_loop(sess, model, trainer, datasets, text_data, train_feeds, valid_feeds)
+		training.training_loop(sess, model, trainer, datasets, text_data, train_feeds, valid_feeds, min_epochs_before_validation=2)
 
-		affect_epochs = (trainer.epochs_completed // 5) + 1*(trainer.epochs_completed < 5)
+		affect_epochs = (trainer.epochs_completed // 4) + 1*(trainer.epochs_completed < 4)
+		total_epochs = trainer.epochs_completed + affect_epochs
+		train_feeds[model.train_affect] = True
+		sys.stderr.write("Switching from cross-entropy to maximum affective content . . .\n")
 
-		affect_trainer = Trainer(checkpoint_best, checkpoint_latest, epochs_completed=trainer.epochs_completed,
-						max_epochs=trainer.epochs_completed+affect_epochs, saver=trainer.saver,
+		affect_trainer = training.Trainer(checkpoint_best, checkpoint_latest, epochs_completed=trainer.epochs_completed,
+						max_epochs=total_epochs, saver=trainer.saver,
 						best_valid_cost = trainer.best_valid_cost)
 
-		
-		epochs_completed, best_valid_loss = training.training_loop(sess, model, affect_trainer, datasets, text_data, train_feeds, valid_feeds)	
+		training.training_loop(sess, model, affect_trainer, datasets, text_data, train_feeds, valid_feeds)	
 
 	
-
 if __name__ == "__main__":
-	if len(sys.argv) > 1:
-		if sys.argv[1] == "--embeddings":
+	if len(sys.argv) > 1 and sys.argv[1] == "--embeddings":
 			gen_embeddings()
 	else:
 		vad_appended_experiment(regen_embeddings=False)

@@ -55,6 +55,27 @@ def batch_data(data_placeholders, questions_int, answers_int, batch_size, pad_to
 
 		yield feed_dict
 
+
+
+
+def show_response(prompt_int, prediction, prompts_int_to_vocab, answers_int_to_vocab, pad_q, pad_a, answer_int = None):
+	prompt_text = [prompts_int_to_vocab[tok] for tok in prompt_int if tok != pad_q]
+	print("Prompt")
+	print("  Word Ids: {}".format([i for i in prompt_int if i != pad_q]))
+	print("      Text: {}".format(prompt_text))
+    
+	if answer_int is not None:
+		answer_text = [answers_int_to_vocab[tok] for tok in answer_int if tok != pad_a]
+		print("Target Answer")
+		print("  Word Ids: {}".format([i for i in answer_int if i != pad_a]))
+		print("      Text: {}".format(answer_text))
+
+	pred_text = [answers_int_to_vocab[tok] for tok in prediction if tok != pad_a]
+	print("\nPrediction")
+	print('  Word Ids: {}'.format([i for i in prediction if i != pad_a]))
+	print('      Text: {}'.format(pred_text))
+        
+
 #FIXME: Add support for logging
 class Trainer(object):
 	"""
@@ -71,8 +92,10 @@ class Trainer(object):
 		self._record = best_valid_cost
 		self._saver = saver if saver is not None else tf.train.Saver()
 		
-	def save_latest(self, sess):
+	def save_latest(self, sess, verbose=True):
+		if verbose: print("{}/{} epochs completed, saving model to {}".format(self.epochs_completed, self.max_epochs, self._latest_model_path))
 		self._saver.save(sess, self._latest_model_path)	
+
 	def check_validation_loss(self, sess, validation_cost):
 		if not( validation_cost >= self._record ):
 			self._record = validation_cost
@@ -88,6 +111,10 @@ class Trainer(object):
 	def finished(self):
 		return (self.epochs_completed >= self.max_epochs) or (self.stalled_steps >= self.max_stalled_steps)
 
+
+	@property
+	def saver(self):
+		return self._saver
 
 	@property
 	def epochs_completed(self):
@@ -123,25 +150,24 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 
 	data_placeholders = model.data_placeholders
 
-	#Actual data
+	#Data
 	(train_prompts_int, train_answers_int) = (datasets.train_prompts_int, datasets.train_answers_int)
 	(valid_prompts_int, valid_answers_int) = (datasets.valid_prompts_int, datasets.valid_answers_int)
-
 	(prompts_int_to_vocab, answers_int_to_vocab) = text_data.prompts_int2vocab, text_data.answers_int2vocab
 	(unk_int, pad_int) = text_data.unk_int, text_data.pad_int
 	
+	#Logging
+	num_tokens = lambda feed_dict: sum(feed_dict[data_placeholders.target_lengths])
 
-	#Operations to pass to sess.run
+	#Fetches
 	(train_op, train_cost, valid_cost) = (model.train_op, model.train_cost, model.valid_cost)
 	infer_ids = model.infer_ids
 
 
+
+
 	display_step = 100
-
-	num_tokens = lambda feed_dict: sum(feed_dict[data_placeholders.target_lengths])
-
 	
-	#FIXME: For simplicity's sake we're just performing validation after each epoch
 	while not trainer.finished:
 		print("Shuffling training data . . .")
 		(train_prompts_int, train_answers_int) = parallel_shuffle(train_prompts_int, train_answers_int)
@@ -172,35 +198,42 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 				tot_train_loss = 0
 				train_start_time = time.time()
 
-    			#VALIDATION CHECK
-			if trainer.epochs_completed+1 > min_epochs_before_validation:
-				print("Shuffling validation data . . .")
-				(valid_prompts_int, valid_answers_int) = parallel_shuffle(valid_prompts_int, valid_answers_int)
-				
-				tot_valid_tokens = 0
-				tot_valid_loss = 0
-				valid_start_time = time.time()
-				for batch_ii, feed_dict in enumerate(batch_data(data_placeholders, valid_prompts_int, valid_answers_int, valid_batch_size, pad_int)):
-				
-					augmented_feed_dict = merge_dicts(feed_dict, valid_feeds)
-				
-					if batch_i == 0:
-						loss, infer_ids_output = sess.run([valid_cost, infer_ids], augmented_feed_dict)
-					else:
-						[loss] = sess.run([valid_cost],augmented_feed_dict)
-				
-					batch_tokens = num_tokens(feed_dict)
-					tot_valid_tokens += batch_tokens
-					tot_valid_loss += batch_tokens*loss
-				duration = time.time() - valid_start_time
-				avg_valid_loss = tot_valid_loss / tot_valid_tokens
-				
-				print("Processed validation set in {:>4.2f} seconds".format(duration))
-				print("Loss-per-Token = {}".format(avg_valid_loss))
-				trainer.check_validation_loss(sess, avg_valid_loss)
-				valid_check_no += 1
+
+		trainer.inc_epochs_completed()
+		trainer.save_latest(sess)
+
+		#FIXME: For simplicity's sake we're just performing validation after each epoch
+		#VALIDATION CHECK
+		if trainer.epochs_completed >= min_epochs_before_validation:
+			print("Shuffling validation data . . .")
+			(valid_prompts_int, valid_answers_int) = parallel_shuffle(valid_prompts_int, valid_answers_int)
+			
+			tot_valid_tokens = 0
+			tot_valid_loss = 0
+			valid_start_time = time.time()
+			for batch_ii, feed_dict in enumerate(batch_data(data_placeholders, valid_prompts_int, valid_answers_int, valid_batch_size, pad_int)):
+				augmented_feed_dict = merge_dicts(feed_dict, valid_feeds)
+			
+				if batch_i == 0:
+					sample_prompts = feed_dict[data_placeholders.input_data]
+					sample_answers = feed_dict[data_placeholders.targets]
+					loss, infer_ids_output = sess.run([valid_cost, infer_ids], augmented_feed_dict)
+				else:
+					[loss] = sess.run([valid_cost],augmented_feed_dict)
+			
+				batch_tokens = num_tokens(feed_dict)
+				tot_valid_tokens += batch_tokens
+				tot_valid_loss += batch_tokens*loss
+
+
+			duration = time.time() - valid_start_time
+			avg_valid_loss = tot_valid_loss / tot_valid_tokens
+			
+			print("Processed validation set in {:>4.2f} seconds".format(duration))
+			print("Loss-per-Token = {}".format(avg_valid_loss))
+			trainer.check_validation_loss(sess, avg_valid_loss)
+			valid_check_no += 1
+			show_response(sample_prompts[0], infer_ids_output[0], prompts_int_to_vocab, answers_int_to_vocab, pad_q=pad_int, pad_a=pad_int, answer_int=sample_answers[0])
                 
 
-		print("{}/{} epochs completed, saving model to {}".format(trainer.epochs_completed+1, trainer.max_epochs, checkpoint_latest))
-		trainer.save_latest(sess)
-		trainer.inc_epochs_completed()
+
