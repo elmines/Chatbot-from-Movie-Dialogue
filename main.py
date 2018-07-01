@@ -1,4 +1,9 @@
 import sys
+
+#sys.path.insert(0, "/users/emines/.local/lib/python3.5/site-packages/")
+
+sys.path.append("/users/emines/.local/lib/python3.5/site-packages/")
+
 import tensorflow as tf
 sys.stderr.write("TensorFlow {}\n".format(tf.VERSION))
 
@@ -31,69 +36,28 @@ def word_vecs_with_meta(wordVecs):
 	return wordVecsWithMeta, wordVecsWithMeta.shape[0]-1
 
 
-def read_tokens(path):
-	with open(path, "r", encoding="utf-8") as r:
-		text = [ [token for token in line.strip().split(" ")] for line in r.readlines()]
-	return text
-
-def load_data(data_dir):
-	"""
-	For now, data_dir must have
-		- train_prompts.txt
-		- train_answers.txt
-		- valid_prompts.txt
-		- valid_answers.txt
-		- vocab.txt
-
-	Returns
-		(train_prompts, train_answers, valid_prompts, valid_answers, vocab2int)
-	"""
-
-	var_names = ["train_prompts", "train_answers", "valid_prompts", "valid_answers", "vocab"]
-	file_names = [os.path.join(data_dir, var_name + ".txt") for var_name in var_names]
-
-	train_prompts = read_tokens(file_names[0])
-	train_answers = read_tokens(file_names[1])
-	valid_prompts = read_tokens(file_names[2])
-	valid_answers = read_tokens(file_names[3])
-
-	vocab = read_tokens(file_names[4])
-	vocab2int = {pair[0]:int(pair[1]) for pair in vocab}
-
-	return (train_prompts, train_answers, valid_prompts, valid_answers, vocab2int)
-	
-
 def append_eos(answers_int, eos_int):
 	return [sequence+[eos_int] for sequence in answers_int]
 
+def gen_embeddings(data_dir="corpora/", w2vec_path="word_Vecs.npy", vad_vec_path="word_Vecs_VAD.npy", verbose=True):
+	data_loader = loader.Loader(data_dir, w2vec_path, regenerate=True) #Loads the vanilla Word2Vec embeddings
+	data_loader.load_vad(vad_vec_path, regenerate=True)
+
 
 def vad_appended_experiment(regen_embeddings=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", vad_vec_path = "word_Vecs_VAD.npy"):
-	data = load_data(data_dir)
-	train_prompts = data[0]
-	train_answers = data[1]
-	valid_prompts = data[2]
-	valid_answers = data[3]
-	vocab2int = data[4]
-	int2vocab = {index:key for key, index in vocab2int.items()}
-	
-	unk_int = 0
-	unk = int2vocab[unk_int] #FIXME: Don't rely on the magic number 0	
-	
+	data = load_data(data_dir, regenerate=regen_embeddings)
 
-	text_to_int = lambda sequences: [ [vocab2int[token] for token in seq] for seq in sequences]
-	train_prompts_int = text_to_int(train_prompts)
-	train_answers_int = text_to_int(train_answers)
-	valid_prompts_int = text_to_int(valid_prompts)
-	valid_answers_int = text_to_int(valid_answers)
+	train_prompts_int = data.train_prompts_int
+	train_answers_int = data.train_answers_int
+	valid_prompts_int = data.valid_prompts_int
+	valid_answers_int = data.valid_answers_int
+	vocab2int = data.vocab2int
+	int2vocab = data.int2vocab
 	
-	if regen_embeddings:
-		full_text = train_prompts+train_answers+valid_prompts+valid_answers
-		w2vec_embeddings = embeddings.w2vec(w2vec_path, full_text, vocab2int, embedding_size=1024)
-		full_embeddings = embeddings.appended_vad(vad_vec_path, w2vec_embeddings, vocab2int, exclude=[unk])
-	else:
-		full_embeddings = np.load(vad_vec_path)	
-
-	full_embeddings = full_embeddings.astype(np.float32)
+	unk_int = data.unk_int
+	unk = data.unk
+	
+	full_embeddings = data.load_vad(vad_vec_path, regenerate=regen_embeddings)
 
 	(wordVecsWithMeta, metatoken) = word_vecs_with_meta(full_embeddings)
 	go_token = metatoken
@@ -145,4 +109,8 @@ def vad_appended_experiment(regen_embeddings=False, data_dir="corpora/", w2vec_p
 	
 
 if __name__ == "__main__":
+	if len(sys.argv) > 1:
+		if sys.argv[1] == "--embeddings":
+			gen_embeddings(verbose=True)	
+
 	vad_appended_experiment(regen_embeddings=False)
