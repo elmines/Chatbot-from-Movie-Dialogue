@@ -1,5 +1,4 @@
 import sys
-print(sys.path)
 import spacy
 
 nlp = spacy.load("en_core_web_sm")

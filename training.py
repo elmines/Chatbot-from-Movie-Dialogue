@@ -34,10 +34,10 @@ def batch_data(data_placeholders, questions_int, answers_int, batch_size, pad_to
 	Returns
 		a feed dictionary with mapping data_placeholders to a batch
 	"""
-	for batch_i in range(0, len(questions)//batch_size):
+	for batch_i in range(0, len(questions_int)//batch_size):
 		start_i = batch_i * batch_size
-		questions_batch = questions[start_i:start_i + batch_size]
-		answers_batch = answers[start_i:start_i + batch_size]
+		questions_batch = questions_int[start_i:start_i + batch_size]
+		answers_batch = answers_int[start_i:start_i + batch_size]
         
 		source_lengths = np.array( [len(sentence) for sentence in questions_batch] )
 		target_lengths = np.array( [len(sentence) for sentence in answers_batch])
@@ -47,10 +47,10 @@ def batch_data(data_placeholders, questions_int, answers_int, batch_size, pad_to
 
 		#DataPlaceholder variables
 		feed_dict = {
-				placeholders.input_data     : pad_prompts_batch,
-				placeholders.targets        : pad_answers_batch,
-				placeholders.source_lengths : source_lengths,
-				placeholders.target_lengths : target_lengths
+				data_placeholders.input_data     : pad_prompts_batch,
+				data_placeholders.targets        : pad_answers_batch,
+				data_placeholders.source_lengths : source_lengths,
+				data_placeholders.target_lengths : target_lengths
 			}
 
 		yield feed_dict
@@ -110,7 +110,7 @@ class Trainer(object):
 		return self._record
 		
 
-def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, valid_feeds=None, train_batch_size=64, valid_batch_size=64):
+def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, valid_feeds=None, train_batch_size=64, valid_batch_size=64, min_epochs_before_validation=2):
 	"""
 	data_placeholders - a tf_collections.DataPlaceholders namedtuple
 	fetches = a tf_collections.Fetches namedtuple	
@@ -166,14 +166,14 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 				avg_train_loss = tot_train_loss / tot_train_tokens
             
 				print('Epoch {:>3}/{} Batch {:>4}/{} - Loss-per-Token: {:>9.6f}, Seconds: {:>4.2f}'
-              				.format(epoch_i, max_epochs, batch_i, len(train_prompts_int) // train_batch_size, avg_train_loss, duration),
+              				.format(trainer.epochs_completed+1, trainer.max_epochs, batch_i, len(train_prompts_int) // train_batch_size, avg_train_loss, duration),
                  			flush=True)
 				tot_train_tokens = 0
 				tot_train_loss = 0
 				train_start_time = time.time()
 
     			#VALIDATION CHECK
-			if epoch_i > min_epochs_before_validation:
+			if trainer.epochs_completed+1 > min_epochs_before_validation:
 				print("Shuffling validation data . . .")
 				(valid_prompts_int, valid_answers_int) = parallel_shuffle(valid_prompts_int, valid_answers_int)
 				
@@ -201,7 +201,6 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 				valid_check_no += 1
                 
 
-			print("{}/{} epochs completed, saving model to {}".format(epoch_i, max_epochs, checkpoint_latest))
-			trainer.save_latest(sess)
-
-			trainer.inc_epochs_completed()
+		print("{}/{} epochs completed, saving model to {}".format(trainer.epochs_completed+1, trainer.max_epochs, checkpoint_latest))
+		trainer.save_latest(sess)
+		trainer.inc_epochs_completed()

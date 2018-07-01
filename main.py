@@ -18,7 +18,7 @@ np.random.seed(SEED)
 tf.set_random_seed(SEED)
 
 #Local modules
-import embeddings
+import loader
 import models
 import training
 import tf_collections
@@ -45,7 +45,7 @@ def gen_embeddings(data_dir="corpora/", w2vec_path="word_Vecs.npy", vad_vec_path
 
 
 def vad_appended_experiment(regen_embeddings=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", vad_vec_path = "word_Vecs_VAD.npy"):
-	data = load_data(data_dir, regenerate=regen_embeddings)
+	data = loader.Loader(data_dir, w2vec_path, regenerate=regen_embeddings)
 
 	train_prompts_int = data.train_prompts_int
 	train_answers_int = data.train_answers_int
@@ -53,12 +53,10 @@ def vad_appended_experiment(regen_embeddings=False, data_dir="corpora/", w2vec_p
 	valid_answers_int = data.valid_answers_int
 	vocab2int = data.vocab2int
 	int2vocab = data.int2vocab
-	
 	unk_int = data.unk_int
 	unk = data.unk
 	
 	full_embeddings = data.load_vad(vad_vec_path, regenerate=regen_embeddings)
-
 	(wordVecsWithMeta, metatoken) = word_vecs_with_meta(full_embeddings)
 	go_token = metatoken
 	eos_token = metatoken
@@ -67,12 +65,10 @@ def vad_appended_experiment(regen_embeddings=False, data_dir="corpora/", w2vec_p
 	train_answers_int = append_eos(train_answers_int, eos_token)
 	valid_answers_int = append_eos(valid_answers_int, eos_token)
 
-
 	tf.reset_default_graph()
-	with tf.device("/cpu:0"):
-		data_placeholders = models.create_placeholders()
-		output_layer = tf.layers.Dense(len(wordVecsWithMeta),bias_initializer=tf.zeros_initializer(),activation=tf.nn.relu)
-		model = models.VADAppended(data_placeholders, full_embeddings, go_token, eos_token, output_layer=output_layer)
+	data_placeholders = models.create_placeholders()
+	output_layer = tf.layers.Dense(len(wordVecsWithMeta),bias_initializer=tf.zeros_initializer(),activation=tf.nn.relu)
+	model = models.VADAppended(data_placeholders, wordVecsWithMeta, go_token, eos_token, output_layer=output_layer)
 
 	#Used to make unique directories, not to identify when a model is saved
 	time_string = time.strftime("%b%d_%H:%M:%S")
@@ -94,7 +90,8 @@ def vad_appended_experiment(regen_embeddings=False, data_dir="corpora/", w2vec_p
 	train_feeds = {model.keep_prob: 0.75}
 	valid_feeds = {model.keep_prob: 1}
 
-	with tf.Session(config=tf.ConfigProto(log_device_placement=True)) as sess:
+	with tf.Session(config=tf.ConfigProto(log_device_placement=False)) as sess:
+		sess.run(tf.global_variables_initializer())
 		epochs_completed, best_valid_loss = training.training_loop(sess, model, trainer, datasets, text_data, train_feeds, valid_feeds)
 
 		affect_epochs = (trainer.epochs_completed // 5) + 1*(trainer.epochs_completed < 5)
@@ -111,6 +108,6 @@ def vad_appended_experiment(regen_embeddings=False, data_dir="corpora/", w2vec_p
 if __name__ == "__main__":
 	if len(sys.argv) > 1:
 		if sys.argv[1] == "--embeddings":
-			gen_embeddings(verbose=True)	
-
-	vad_appended_experiment(regen_embeddings=False)
+			gen_embeddings()
+	else:
+		vad_appended_experiment(regen_embeddings=False)
