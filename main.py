@@ -139,7 +139,7 @@ class Aff2VecExp(Experiment):
 		if counterfit:
 			full_embeddings = self.data.load_counterfit("word_Vecs_counterfit_affect.npy", "./w2v_counterfit_append_affect.bin", regenerate=regenerate)
 		else:
-			full_embeddings = self.data.load_counterfit("word_Vecs_retrofit_affect.npy", "./w2v_counterfit_append_affect.bin", regenerate=regenerate)
+			full_embeddings = self.data.load_retrofit("word_Vecs_retrofit_affect.npy", "./w2v_retrofit_append_affect.bin", regenerate=regenerate)
 		(self.wordVecsWithMeta, metatoken) = word_vecs_with_meta(full_embeddings)
 		self.go_token = metatoken
 		self.eos_token = metatoken
