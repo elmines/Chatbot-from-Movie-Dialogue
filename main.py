@@ -132,6 +132,40 @@ class VADExp(Experiment):
 
 			training.training_loop(sess, model, affect_trainer, self.datasets, text_data, train_feeds, valid_feeds)	
 
+class Aff2VecExp(Experiment):
+	def __init__(self, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", counterfit=True):
+		Experiment.__init__(self, regenerate, data_dir, w2vec_path)
+
+		if counterfit:
+			full_embeddings = self.data.load_counterfit("word_Vecs_counterfit_affect.npy", "./w2v_counterfit_append_affect.bin", regenerate=regenerate)
+		else:
+			full_embeddings = self.data.load_counterfit("word_Vecs_retrofit_affect.npy", "./w2v_counterfit_append_affect.bin", regenerate=regenerate)
+		(self.wordVecsWithMeta, metatoken) = word_vecs_with_meta(full_embeddings)
+		self.go_token = metatoken
+		self.eos_token = metatoken
+		self.pad_token = metatoken
+
+		self.prep_data()
+
+	def run(self):
+		tf.reset_default_graph()
+		data_placeholders = models.create_placeholders()
+		output_layer = tf.layers.Dense(len(self.wordVecsWithMeta),bias_initializer=tf.zeros_initializer(),activation=tf.nn.relu)
+		model = models.Aff2Vec(data_placeholders, self.wordVecsWithMeta, self.wordVecsWithMeta, self.go_token, self.eos_token, output_layer=output_layer)
+
+		xent_epochs = 10
+		train_feeds = {model.keep_prob: 0.75}
+		valid_feeds = {model.keep_prob: 1}
+
+		trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, max_epochs=xent_epochs, max_stalled_steps=2)
+		text_data = tf_collections.TextData(prompts_int2vocab=self.int2vocab,
+						answers_int2vocab=self.int2vocab,
+						unk_int=self.unk_int, eos_int=self.eos_token, pad_int=self.pad_token)
+
+		with tf.Session() as sess:
+			sess.run(tf.global_variables_initializer())
+			training.training_loop(sess, model, trainer, self.datasets, text_data, train_feeds, valid_feeds, min_epochs_before_validation=2)
+
 	
 if __name__ == "__main__":
 	parser = create_parser()
@@ -145,10 +179,10 @@ if __name__ == "__main__":
 		vad_exp = VADExp(regenerate)
 		vad_exp.run()
 	elif args.counter:
-		counter_exp = CounterExp(regenerate)
+		counter_exp = Aff2VecExp(regenerate, counterfit=True)
 		counter_exp.run()
 	elif args.retro:
-		retro_exp = RetroExp(regnerate)
+		retro_exp = Aff2VecExp(regnerate, counterfit=False)
 		retro_exp.run()
 	else:
 		parser.print_help()

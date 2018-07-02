@@ -168,8 +168,8 @@ class Seq2Seq(object):
 		return self._dec_embed_input
 
 class Aff2Vec(Seq2Seq):
-	def __init__(self, *args, **kwarg):
-		Seq2Seq.__init__(self, *(args), **(kwargs))
+	def __init__(self, *args, **kwargs):
+		super(Aff2Vec, self).__init__(*(args), **(kwargs))
 	
 		gradients = self.optimizer.compute_gradients(self.xent)
 		capped_gradients = [(tf.clip_by_value(grad, -5., 5.), var) for grad, var in gradients if grad is not None]
