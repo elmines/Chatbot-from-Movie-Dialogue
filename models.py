@@ -48,7 +48,7 @@ def _decoding_layer(enc_state, enc_outputs, dec_embed_input, dec_embeddings, dec
 		train_outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(train_decoder, impute_finished=True, scope=scope)
 		train_logits = train_outputs.rnn_output
 	
-		scope.reuse_variables()
+		#scope.reuse_variables()
 		#INFERENCE
 		infer_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(dec_embeddings, start_tokens = tf.tile([go_token], [batch_size]), end_token = eos_token)
 		infer_decoder = decoder_gen(infer_helper)
