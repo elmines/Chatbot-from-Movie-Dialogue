@@ -58,4 +58,20 @@ class Loader(object):
 		self.vad_embeddings = self.vad_embeddings.astype(np.float32)
 
 		return self.vad_embeddings
-	
+
+	def load_counterfit(self, counterfit_path = "word_Vecs_counterfit_affect.npy", source_embeddings_path="./w2v_counterfit_append_affect.bin", regenerate=True, verbose=True):
+		if regenerate:
+			self.counter_embeddings = embeddings.aff2vec(counterfit_path, self.vocab2int, source_embeddings_path, exclude=[self.unk])
+		else:
+			self.counter_embeddings = np.load(counterfit_path)
+		self.counter_embeddings = self.counter_embeddings.astype(np.float32)
+		return self.counter_embeddings
+
+	def load_retrofit(self, retrofit_path = "word_Vecs_retrofit_affect.npy", source_embeddings_path="./w2v_retrofit_append_affect.bin", regenerate=True, verbose=True):
+		if regenerate:
+			self.retro_embeddings = embeddings.aff2vec(retrofit_path, self.vocab2int, source_embeddings_path, exclude=[self.unk])
+		else:
+			self.retro_embeddings = np.load(retrofit_path)
+		self.retro_embeddings = self.retro_embeddings.astype(np.float32)
+		return self.retro_embeddings
+

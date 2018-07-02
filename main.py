@@ -1,6 +1,5 @@
 import sys
 import tensorflow as tf
-sys.stderr.write("TensorFlow {}\n".format(tf.VERSION))
 import numpy as np
 import os
 import time
@@ -21,7 +20,7 @@ tf.set_random_seed(SEED)
 def create_parser():
 	parser = argparse.ArgumentParser(description="Train an affective neural dialog generation model")
 
-	parser.add_argument("--embeddings-only", action="store_true", help="Just generate the embeddings for all the models and exit")
+	parser.add_argument("--embeddings-only", action="store_true", help="Just generate the embeddings for the specified model(s) and exit")
 
 	parser.add_argument("--regen-embeddings", action="store_true", help="Regenerate affective embeddings prior to training")
 
@@ -46,9 +45,11 @@ def word_vecs_with_meta(wordVecs):
 def append_eos(answers_int, eos_int):
 	return [sequence+[eos_int] for sequence in answers_int]
 
-def gen_embeddings(data_dir="corpora/", w2vec_path="word_Vecs.npy", vad_vec_path="word_Vecs_VAD.npy", verbose=True):
+def gen_embeddings(vad=True, counter=True, retro=True, data_dir="corpora/", w2vec_path="word_Vecs.npy", vad_vec_path="word_Vecs_VAD.npy", counterfit_path="word_Vecs_counterfit_affect.npy", retrofit_path="word_Vecs_retrofit_affect.npy", verbose=True):
 	data_loader = loader.Loader(data_dir, w2vec_path, regenerate=True) #Loads the vanilla Word2Vec embeddings
-	data_loader.load_vad(vad_vec_path, regenerate=True)
+	if vad:     data_loader.load_vad(vad_vec_path, regenerate=True)
+	if counter: data_loader.load_counterfit(counterfit_path, "./w2v_counterfit_append_affect.bin", regenerate=True)
+	if retro:   data_loader.load_retrofit(retrofit_path, "./w2v_retrofit_append_affect.bin", regenerate=True)
 
 
 class Experiment(object):
@@ -136,7 +137,7 @@ if __name__ == "__main__":
 	parser = create_parser()
 	args = parser.parse_args()
 	if args.embeddings_only:
-		gen_embeddings()
+		gen_embeddings(args.vad, args.counter, args.retro)
 		sys.exit(0)
 
 	regenerate = args.regen_embeddings
@@ -144,6 +145,10 @@ if __name__ == "__main__":
 		vad_exp = VADExp(regenerate)
 		vad_exp.run()
 	elif args.counter:
-		pass
+		counter_exp = CounterExp(regenerate)
+		counter_exp.run()
 	elif args.retro:
-		pass
+		retro_exp = RetroExp(regnerate)
+		retro_exp.run()
+	else:
+		parser.print_help()

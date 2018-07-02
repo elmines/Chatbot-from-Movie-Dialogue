@@ -31,29 +31,31 @@ def _process_decoding_input(target_data, go_token):
         dec_input = tf.concat( [tf.fill([batch_size, 1], go_token), ending], 1)
         return dec_input
 def _decoding_layer(enc_state, enc_outputs, dec_embed_input, dec_embeddings, dec_cell, attn_size, output_layer, source_lengths, target_lengths, go_token, eos_token):
-        batch_size = tf.shape(source_lengths)[0]
-
-        attn_mech = tf.contrib.seq2seq.BahdanauAttention(num_units=attn_size, memory=enc_outputs, memory_sequence_length=source_lengths)
-        attn_cell = tf.contrib.seq2seq.AttentionWrapper(dec_cell, attn_mech, attention_layer_size=dec_cell.output_size)
-
-        init_attn_dec_state = attn_cell.zero_state(batch_size, tf.float32).clone(cell_state=enc_state)
-        
-        decoder_gen = lambda helper: tf.contrib.seq2seq.BasicDecoder(attn_cell, helper, init_attn_dec_state,
-        output_layer = output_layer)
-        
-        #TRAINING
-        train_helper = tf.contrib.seq2seq.TrainingHelper(dec_embed_input, target_lengths)
-        train_decoder = decoder_gen(train_helper)
-        train_outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(train_decoder, impute_finished=True) #FIXME: Add back reusable variable scope?
-        train_logits = train_outputs.rnn_output
-        
-        #INFERENCE
-        infer_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(dec_embeddings, start_tokens = tf.tile([go_token], [batch_size]), end_token = eos_token)
-        infer_decoder = decoder_gen(infer_helper)
-        infer_outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(infer_decoder, impute_finished=True, maximum_iterations=tf.round(tf.reduce_max(source_lengths) * 2))
-        infer_ids = infer_outputs.sample_id
-        
-        return train_logits, infer_ids
+	batch_size = tf.shape(source_lengths)[0]
+	
+	attn_mech = tf.contrib.seq2seq.BahdanauAttention(num_units=attn_size, memory=enc_outputs, memory_sequence_length=source_lengths)
+	attn_cell = tf.contrib.seq2seq.AttentionWrapper(dec_cell, attn_mech, attention_layer_size=dec_cell.output_size)
+	
+	init_attn_dec_state = attn_cell.zero_state(batch_size, tf.float32).clone(cell_state=enc_state)
+	
+	decoder_gen = lambda helper: tf.contrib.seq2seq.BasicDecoder(attn_cell, helper, init_attn_dec_state,
+		output_layer = output_layer)
+	
+	with tf.variable_scope("decoding") as scope:
+		#TRAINING
+		train_helper = tf.contrib.seq2seq.TrainingHelper(dec_embed_input, target_lengths)
+		train_decoder = decoder_gen(train_helper)
+		train_outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(train_decoder, impute_finished=True, scope=scope)
+		train_logits = train_outputs.rnn_output
+	
+		scope.reuse_variables()
+		#INFERENCE
+		infer_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(dec_embeddings, start_tokens = tf.tile([go_token], [batch_size]), end_token = eos_token)
+		infer_decoder = decoder_gen(infer_helper)
+		infer_outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(infer_decoder, impute_finished=True, maximum_iterations=tf.round(tf.reduce_max(source_lengths) * 2), scope=scope)
+		infer_ids = infer_outputs.sample_id
+	
+	return train_logits, infer_ids
 
 
 class Seq2Seq(object):
@@ -164,6 +166,25 @@ class Seq2Seq(object):
 	@property
 	def dec_embed_input(self):
 		return self._dec_embed_input
+
+class Aff2Vec(Seq2Seq):
+	def __init__(self, *args, **kwarg):
+		Seq2Seq.__init__(self, *(args), **(kwargs))
+	
+		gradients = self.optimizer.compute_gradients(self.xent)
+		capped_gradients = [(tf.clip_by_value(grad, -5., 5.), var) for grad, var in gradients if grad is not None]
+		self._train_op = self.optimizer.apply_gradients(capped_gradients)
+	@property
+	def train_cost(self):
+		return self.xent
+
+	@property
+	def valid_cost(self):
+		return self.perplexity
+
+	@property
+	def train_op(self):
+		return self._train_op
 
 class VADAppended(Seq2Seq):
 

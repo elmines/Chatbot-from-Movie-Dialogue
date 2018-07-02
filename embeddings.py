@@ -71,15 +71,15 @@ def aff2vec(model_path, vocab2int, aff_embeddings_path="./w2_counterfit_append_a
 	int2vocab = sorted(vocab2int.keys(), key=vocab2int.__getitem__)
 
 	# Load Google's pre-trained Word2Vec model.
-	model_counterfit_affect = gensim.models.KeyedVectors.load_word2vec_format(aff_embeddings_path, binary=True)
-	targ_vocab = list(model_counterfit_affect.wv.vocab.keys())
+	aff_embeddings = gensim.models.KeyedVectors.load_word2vec_format(aff_embeddings_path, binary=True)
 
+	targ_vocab = list(aff_embeddings.wv.vocab.keys())
 	mapping = match.vocab_match(int2vocab, targ_vocab, verbose=verbose)
 	if exclude is not None:
 		for word in exclude:
 			mapping[word] = None
 
-	embedding_size = aff_embeddings.shape[1]
+	embedding_size = len(aff_embeddings.wv[targ_vocab[0]])
 	word_vecs_emot = np.zeros( (len(vocab2int), embedding_size) )
 
 	assign_emot = []
@@ -87,77 +87,39 @@ def aff2vec(model_path, vocab2int, aff_embeddings_path="./w2_counterfit_append_a
 
 	for word in int2vocab:
 		target_word = mapping[word]
-		index = vocab2int[word]
+		word_index = vocab2int[word]
 		if target_word is not None:
 			if verbose: sys.stderr.write("Emotional Embeddings Assigned: {} --> {}\n".format(word, target_word))
-			assign_emot.append(word)
-			word_vecs_emot[word] = aff_embeddings[target_word]
+			assign_emot.append(word_index)
+			word_vecs_emot[word_index] = aff_embeddings.wv[target_word]
 
-			word_vecs_emot[index][:-3] = embeddings[index]
-			word_vecs_emot[index][-3] = df_emot.loc[df_emot['Word'] == target_word, 'V.Mean.Sum'].iloc[0]
-			word_vecs_emot[index][-2] = df_emot.loc[df_emot['Word'] == target_word, 'A.Mean.Sum'].iloc[0]
-			word_vecs_emot[index][-1] = df_emot.loc[df_emot['Word'] == target_word, 'D.Mean.Sum'].iloc[0]
 		else:
 			if verbose: sys.stderr.write("Neutral Vector Assigned: {}\n".format(word))
-			count_neutral += 1
-			word_vecs_emot[index][:-3] = embeddings[index]
-			word_vecs_emot[index][-3]   = 5
-			word_vecs_emot[index][-2]   = 1
-			word_vecs_emot[index][-1]   = 5
+			assign_neutral.append(word_index)
 
 
-	for i,word in enumerate(model.wv.index2word):
-    		lemma = lemmatize_text(word)
-    		if lemma in dict_lemma_counterfit.keys():
-        		word_vecs_counterfit_affect[vocab2int[word]] = model_counterfit_affect[dict_lemma_counterfit[lemma]]
-    		else:
-        		list_word_not_found.append(vocab2int[word])
-	word_unknown = np.mean(word_vecs_counterfit_affect, axis=0)
-	for i in list_word_not_found:
-    		word_vecs_counterfit_affect[i] = word_unknown
+	neut_embedding = np.mean( word_vecs_emot[assign_emot], axis = 0)
+	word_vecs_emot[assign_neutral] = neut_embedding
+	np.save(model_path, word_vecs_emot)
 
-	np.save(model_path, word_vecs_counterfit_affect)
-	return word_vecs_counterfit_affect
+	if verbose:
+		sys.stderr.write("{}/{} words assigned emotional embeddings.\n".format(len(assign_emot), len(vocab2int)))
+		sys.stderr.write("{}/{} words assigned the neutral vector.\n".format(len(assign_neutral), len(vocab2int)))
 
-def retrofitted(model=None, vocab2int=None, regenerate=True):
+
 	"""
-	model - a gensim Word2Vec model, already loaded
-	regenerate - Actually create the retrofitted model, rather than just return a path
-
-	If regenerate is True, model must be specified
-
-	Returns
-		A path to an .npy file containing the word embeddings
+	print("Neutral vector: ", neut_embedding)
+	index = 26
+	summation = 0
+	for i in assign_emot:
+		summation += word_vecs_emot[i][index]
+	average = summation / len(assign_emot)
+	for j in assign_neutral:
+		a = average
+		b = word_vecs_emot[j][index]
+		assert abs(a - b) < 0.0001
+		print("Assertion passed!: {} == {}".format(a, b))
 	"""
 
-	model_path = os.path.join('word_Vecs_retrofit_affect.npy')
-	if not regenerate: return model_path
+	return word_vecs_emot
 
-	if (model is None) or (vocab2int is None):
-		raise ValueError("Must specify model parameter if generating a VAD-appended model")
-
-	model_retrofit_affect = gensim.models.KeyedVectors.load_word2vec_format('./w2v_retrofit_append_affect.bin', binary=True)
-
-
-	list_retrofit =list(model_retrofit_affect.wv.vocab.keys())
-
-	dict_lemma_retrofit={}
-	for word in list_retrofit:
-    		dict_lemma_retrofit[lemmatize_text(word)]=word
-
-	word_vecs_retrofit_affect = np.zeros((len(model.wv.vocab),303))
-	list_word_not_found_retro =[]
-	for i,word in enumerate(model.wv.index2word):
-    		lemma = lemmatize_text(word)
-    		if lemma in dict_lemma_retrofit.keys():
-        		word_vecs_retrofit_affect[vocab2int[word]] = model_retrofit_affect[dict_lemma_retrofit[lemma]]
-    		else:
-        		list_word_not_found_retro.append(vocab2int[word])
-
-	word_unknown_retro = np.mean(word_vecs_retrofit_affect, axis=0)
-
-	for i in list_word_not_found_retro:
-    		word_vecs_retrofit_affect[i] = word_unknown_retro
-
-	np.save(model_path, word_vecs_retrofit_affect)
-	return model_path
