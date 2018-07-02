@@ -153,13 +153,12 @@ class Aff2VecExp(Experiment):
 		output_layer = tf.layers.Dense(len(self.wordVecsWithMeta),bias_initializer=tf.zeros_initializer(),activation=tf.nn.relu)
 		model = models.Aff2Vec(data_placeholders, self.wordVecsWithMeta, self.wordVecsWithMeta, self.go_token, self.eos_token, output_layer=output_layer)
 
-		xent_epochs = 10
+		xent_epochs = 15
 		train_feeds = {model.keep_prob: 0.75}
 		valid_feeds = {model.keep_prob: 1}
 
 		trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, max_epochs=xent_epochs, max_stalled_steps=2)
-		text_data = tf_collections.TextData(prompts_int2vocab=self.int2vocab,
-						answers_int2vocab=self.int2vocab,
+		text_data = tf_collections.TextData(prompts_int2vocab=self.int2vocab, answers_int2vocab=self.int2vocab,
 						unk_int=self.unk_int, eos_int=self.eos_token, pad_int=self.pad_token)
 
 		with tf.Session() as sess:
@@ -182,7 +181,7 @@ if __name__ == "__main__":
 		counter_exp = Aff2VecExp(regenerate, counterfit=True)
 		counter_exp.run()
 	elif args.retro:
-		retro_exp = Aff2VecExp(regnerate, counterfit=False)
+		retro_exp = Aff2VecExp(regenerate, counterfit=False)
 		retro_exp.run()
 	else:
 		parser.print_help()
