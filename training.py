@@ -214,7 +214,7 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 			for batch_ii, feed_dict in enumerate(batch_data(data_placeholders, valid_prompts_int, valid_answers_int, valid_batch_size, pad_int)):
 				augmented_feed_dict = merge_dicts(feed_dict, valid_feeds)
 			
-				if batch_i == 0:
+				if batch_ii == 0:
 					sample_prompts = feed_dict[data_placeholders.input_data]
 					sample_answers = feed_dict[data_placeholders.targets]
 					loss, infer_ids_output = sess.run([valid_cost, infer_ids], augmented_feed_dict)

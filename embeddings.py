@@ -22,17 +22,6 @@ def w2vec(model_path, text, vocab2int, embedding_size=1024, verbose=True):
 
 
 def appended_vad(model_path, embeddings, vocab2int, exclude=None, verbose=True):
-	"""
-	model - a gensim Word2Vec model, already loaded
-	regenerate - Actually create the VAD model, rather than just return a path
-	exclude - list of tokens in vocab2int to assign the neutral vector
-
-	If regenerate is True, model and vocab2int must be specified
-
-	Returns
-		A path to an .npy file containing the word embeddings
-	"""
-	
 	#Simple list of vocabulary items at their proper indices
 	int2vocab = sorted(vocab2int.keys(), key=vocab2int.__getitem__)
 
@@ -76,31 +65,47 @@ def appended_vad(model_path, embeddings, vocab2int, exclude=None, verbose=True):
 	return word_vecs_vad
 
 
-def counterfitted(model=None, vocab2int=None, regenerate=True):
-	"""
-	model - a gensim Word2Vec model, already loaded
-	regenerate - Actually create the counterfitted model, rather than just return a path
-
-	If regenerate is True, model must be specified
-
-	Returns
-		A path to an .npy file containing the word embeddings
-	"""
-
-	model_path = os.path.join('word_Vecs_counterfit_affect.npy')
-	if not regenerate: return model_path
-
-	if (model is None) or (vocab2int is None):
-		raise ValueError("Must specify model parameter if generating a VAD-appended model")
+def aff2vec(model_path, vocab2int, aff_embeddings_path="./w2_counterfit_append_affect.bin", exclude=None, verbose=True):
+	#Simple list of vocabulary items at their proper indices
+	#FIXME: Assumes the lowest index is indeed 0. Bad?
+	int2vocab = sorted(vocab2int.keys(), key=vocab2int.__getitem__)
 
 	# Load Google's pre-trained Word2Vec model.
-	model_counterfit_affect = gensim.models.KeyedVectors.load_word2vec_format('./w2v_counterfit_append_affect.bin', binary=True)
-	list_counterfit =list(model_counterfit_affect.wv.vocab.keys())
-	dict_lemma_counterfit={}
-	for word in list_counterfit:
-    		dict_lemma_counterfit[lemmatize_text(word)]=word
-	word_vecs_counterfit_affect = np.zeros((len(model.wv.vocab),303))
-	list_word_not_found =[]
+	model_counterfit_affect = gensim.models.KeyedVectors.load_word2vec_format(aff_embeddings_path, binary=True)
+	targ_vocab = list(model_counterfit_affect.wv.vocab.keys())
+
+	mapping = match.vocab_match(int2vocab, targ_vocab, verbose=verbose)
+	if exclude is not None:
+		for word in exclude:
+			mapping[word] = None
+
+	embedding_size = aff_embeddings.shape[1]
+	word_vecs_emot = np.zeros( (len(vocab2int), embedding_size) )
+
+	assign_emot = []
+	assign_neutral = []
+
+	for word in int2vocab:
+		target_word = mapping[word]
+		index = vocab2int[word]
+		if target_word is not None:
+			if verbose: sys.stderr.write("Emotional Embeddings Assigned: {} --> {}\n".format(word, target_word))
+			assign_emot.append(word)
+			word_vecs_emot[word] = aff_embeddings[target_word]
+
+			word_vecs_emot[index][:-3] = embeddings[index]
+			word_vecs_emot[index][-3] = df_emot.loc[df_emot['Word'] == target_word, 'V.Mean.Sum'].iloc[0]
+			word_vecs_emot[index][-2] = df_emot.loc[df_emot['Word'] == target_word, 'A.Mean.Sum'].iloc[0]
+			word_vecs_emot[index][-1] = df_emot.loc[df_emot['Word'] == target_word, 'D.Mean.Sum'].iloc[0]
+		else:
+			if verbose: sys.stderr.write("Neutral Vector Assigned: {}\n".format(word))
+			count_neutral += 1
+			word_vecs_emot[index][:-3] = embeddings[index]
+			word_vecs_emot[index][-3]   = 5
+			word_vecs_emot[index][-2]   = 1
+			word_vecs_emot[index][-1]   = 5
+
+
 	for i,word in enumerate(model.wv.index2word):
     		lemma = lemmatize_text(word)
     		if lemma in dict_lemma_counterfit.keys():
@@ -112,7 +117,7 @@ def counterfitted(model=None, vocab2int=None, regenerate=True):
     		word_vecs_counterfit_affect[i] = word_unknown
 
 	np.save(model_path, word_vecs_counterfit_affect)
-	return model_path
+	return word_vecs_counterfit_affect
 
 def retrofitted(model=None, vocab2int=None, regenerate=True):
 	"""
