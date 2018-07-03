@@ -6,7 +6,7 @@ import tf_collections
 import loss_functions
 import metrics
 
-def create_placeholders():
+def _create_placeholders():
 	#                                          batch_size  time
 	input_data =     tf.placeholder(tf.int32, [None,       None], name='input_data')
 	targets =        tf.placeholder(tf.int32, [None,       None], name='targets')
@@ -60,7 +60,7 @@ def _decoding_layer(enc_state, enc_outputs, dec_embed_input, dec_embeddings, dec
 
 class Seq2Seq(object):
 
-	def __init__(self, placeholders, enc_embeddings, dec_embeddings, go_token, eos_token,
+	def __init__(self, enc_embeddings, dec_embeddings, go_token, eos_token,
 			num_layers=1, rnn_size=1024, attn_size=256, output_layer=None,
 			learning_rate=0.0001):
 		"""
@@ -68,14 +68,14 @@ class Seq2Seq(object):
 		learning_rate - A constant (you can't decay it over time)
 		"""
 
-		self._data_placeholders = placeholders
-		self._input_data = placeholders.input_data
-		self._targets = placeholders.targets
+		self._data_placeholders = _create_placeholders()
+		self._input_data = self._data_placeholders.input_data
+		self._targets = self._data_placeholders.targets
 		self._keep_prob = tf.placeholder(tf.float32, name="keep_prob")
 	
 	        #Both of these could be necessary for subclasses with custom loss functions
-		self._source_lengths = placeholders.source_lengths
-		self._target_lengths = placeholders.target_lengths
+		self._source_lengths = self._data_placeholders.source_lengths
+		self._target_lengths = self._data_placeholders.target_lengths
 		self._enc_embed_input = tf.nn.embedding_lookup(enc_embeddings, self._input_data)
 		self._dec_embed_input = tf.nn.embedding_lookup(dec_embeddings, _process_decoding_input(self._targets, go_token))
 	
@@ -188,7 +188,7 @@ class Aff2Vec(Seq2Seq):
 
 class VADAppended(Seq2Seq):
 
-	def __init__(self, placeholders, full_embeddings, go_token, eos_token,
+	def __init__(self, full_embeddings, go_token, eos_token,
                 num_layers=1, rnn_size=1024, attn_size=256, output_layer=None,
 		keep_prob = 1, learning_rate=0.0001,
  		affect_strength=0.5):
@@ -196,7 +196,7 @@ class VADAppended(Seq2Seq):
 		affect_strength - hyperparameter in the range [0.0, 1.0)
 		"""
 		
-		Seq2Seq.__init__(self, placeholders, full_embeddings, full_embeddings,go_token, eos_token,
+		Seq2Seq.__init__(self, full_embeddings, full_embeddings,go_token, eos_token,
 				num_layers=num_layers,rnn_size=rnn_size,attn_size=attn_size,output_layer=output_layer, learning_rate=learning_rate)
 
 		emot_embeddings = full_embeddings[:, -3: ]
