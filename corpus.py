@@ -1,9 +1,3 @@
-#Text preprocessing
-import re
-import nltk
-import gensim
-import pycontractions
-import language_check
 
 import multiprocessing as mp
 
@@ -15,6 +9,8 @@ import numpy as np #For shuffling data
 
 #Local modules
 import testset
+
+from preprocessing import clean
 
 
 np.random.seed(1)
@@ -28,15 +24,6 @@ _DEFAULT_MAX_LINE_LENGTH = INFINITY
 
 _DEFAULT_UNK = "<UNK>"
 _DEFAULT_CONTR_MODEL = "w2vec_models/contractions.model"
-
-class SimpleContractions(pycontractions.Contractions):
-
-	def __init__(self, w2v_path):
-		pycontractions.Contractions.__init__(self, w2v_path)
-		self.w2v_model = gensim.models.KeyedVectors.load(self.w2v_path)
-		self.lc_tool = language_check.LanguageTool(self.lang_code)
-
-
 
 def gen_datasets(lines_path, conversations_path,
 		max_vocab=_DEFAULT_MAX_WORDS, min_line_length=_DEFAULT_MIN_LINE_LENGTH, max_line_length=_DEFAULT_MAX_LINE_LENGTH, unk = _DEFAULT_UNK, contraction_model_path=None, partition=(0.8, 0.2), output_dir="corpora", num_processes=1, verbose=True):
@@ -80,31 +67,22 @@ def gen_datasets(lines_path, conversations_path,
 	(prompts, answers) = _generate_sequences(id2line, conv_lines)
 	sys.stderr.write("{} dialog exchanges.\n".format(len(prompts)))
 
-	remaining_indices = list( set(range(len(prompts))) - set(testset.test_indices("./test_set_removed.xlsx")) )
-	remaining_indices.sort()
-	prompts = [prompts[index] for index in remaining_indices]
-	answers = [answers[index] for index in remaining_indices]
-	if verbose: sys.stderr.write("{} sequences remaining after filtering out test sequences.\n".format(len(prompts)))
+	#remaining_indices = list( set(range(len(prompts))) - set(testset.test_indices("./test_set_removed.xlsx")) )
+	#remaining_indices.sort()
+	#prompts = [prompts[index] for index in remaining_indices]
+	#answers = [answers[index] for index in remaining_indices]
+	#if verbose: sys.stderr.write("{} sequences remaining after filtering out test sequences.\n".format(len(prompts)))
 
-	if contraction_model_path is None:
-		contr_prompts = prompts
-		contr_answers = answers
-		corpus_tokens = [[token for token in sequence.split()] for sequence in contr_prompts+contr_answers]
-		contraction_model_path = _DEFAULT_CONTR_MODEL
-		contraction_model = gensim.models.Word2Vec(sentences=corpus_tokens, size=1024, window=5, min_count=1, workers=4, sg=0)
-		model_vectors = contraction_model.wv
-		model_vectors.save(contraction_model_path)
-		if verbose: sys.stderr.write("Wrote Word2Vec model for finding contractions at {}.\n".format(contraction_model_path))
-		#The model will have to be reloaded by pycontractions, so why waste memory? 
-		del contraction_model
-		del model_vectors
-	contraction_exp = SimpleContractions(contraction_model_path)
+	clean_prompts = [ clean.pre_clean_seq(prompt).split() for prompt in prompts]
+	clean_answers = [ clean.pre_clean_seq(answer).split() for answer in answers]
+
+	(prompts, answers) = (clean_prompts, clean_answers)
 
 
-	joined_text = [token_sequence for token_sequence in prompts+answers] #Concatenate text for cleaning
-	clean_text = _clean(joined_text, contraction_exp, num_processes=num_processes, verbose=verbose)
-	(prompts, answers) = (clean_text[:len(prompts)], clean_text[len(prompts):])    #Break text back apart
-	assert len(prompts) == len(answers)
+	#joined_text = [token_sequence for token_sequence in prompts+answers] #Concatenate text for cleaning
+	#clean_text = _clean(joined_text, contraction_exp, num_processes=num_processes, verbose=verbose)
+	#(prompts, answers) = (clean_text[:len(prompts)], clean_text[len(prompts):])    #Break text back apart
+	#assert len(prompts) == len(answers)
 
 	if verbose: sys.stderr.write("Filtering sequences by length . . .\n")
 	(short_prompts, short_answers) = _filter_by_length(prompts, answers, min_line_length, max_line_length)
@@ -328,5 +306,5 @@ def _replace_unknowns(sequences, vocab, unk):
 	return [ [word if word in vocab else unk for word in sequence] for sequence in sequences ]
 
 if __name__ == "__main__":
-	gen_datasets("movie_lines.txt", "movie_conversations.txt", contraction_model_path = "w2vec_models/contractions.model")
+	gen_datasets("movie_lines.txt", "movie_conversations.txt", max_line_length = 60)
 
