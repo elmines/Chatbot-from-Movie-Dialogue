@@ -103,9 +103,8 @@ class VADExp(Experiment):
 
 	def run(self):
 		tf.reset_default_graph()
-		data_placeholders = models.create_placeholders()
 		output_layer = tf.layers.Dense(len(self.wordVecsWithMeta),bias_initializer=tf.zeros_initializer(),activation=tf.nn.relu)
-		model = models.VADAppended(data_placeholders, self.wordVecsWithMeta, self.go_token, self.eos_token, output_layer=output_layer, affect_strength = 0.2)
+		model = models.VADAppended(self.wordVecsWithMeta, self.go_token, self.eos_token, output_layer=output_layer, affect_strength = 0.2)
 
 
 		xent_epochs = 8
@@ -149,9 +148,8 @@ class Aff2VecExp(Experiment):
 
 	def run(self):
 		tf.reset_default_graph()
-		data_placeholders = models.create_placeholders()
 		output_layer = tf.layers.Dense(len(self.wordVecsWithMeta),bias_initializer=tf.zeros_initializer(),activation=tf.nn.relu)
-		model = models.Aff2Vec(data_placeholders, self.wordVecsWithMeta, self.wordVecsWithMeta, self.go_token, self.eos_token, output_layer=output_layer)
+		model = models.Aff2Vec(self.wordVecsWithMeta, self.wordVecsWithMeta, self.go_token, self.eos_token, output_layer=output_layer)
 
 		xent_epochs = 15
 		train_feeds = {model.keep_prob: 0.75}

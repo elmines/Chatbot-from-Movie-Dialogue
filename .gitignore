@@ -16,3 +16,6 @@ __MACOSX/
 #Tensorflow checkpoint files
 checkpoint
 *ckpt*
+
+#Documentation (for now)
+doc/
