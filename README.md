@@ -1,10 +1,13 @@
-# Chatbot-from-Movie-Dialogue
+# Emotional Chatbot
+A chatbot for emotional dialog generation built in TensorFlow 1.7 and modeled after the approach described in [Asghar et al.](https://arxiv.org/abs/1709.03968).
 
-I built a simple chatbot using conversations from Cornell University's [Movie Dialogue Corpus](https://www.cs.cornell.edu/~cristian/Cornell_Movie-Dialogs_Corpus.html). The main features of our model are LSTM cells, a bidirectional dynamic RNN, and decoders with attention. 
+## Dependencies
+- [tensorflow](https://pypi.org/project/tensorflow/) 1.7 or higher
+- [pandas](https://pypi.org/project/pandas/)
+- [gensim](https://pypi.org/project/gensim/)
+- [nltk](https://pypi.org/project/nltk/)
+  - punkt
+- [spaCy](https://pypi.org/project/spacy/)
+  - en\_core\_web\_sm
+- [pycontractions](https://pypi.org/project/pycontractions/)
 
-If you would like to learn a bit more about the details of this project, especially the sequence-to-sequence portion, I wrote an [article](https://medium.com/@Currie32/how-to-build-your-first-chatbot-c84495d4622d) about this.
-
-movie_conversations.txt.zip contains the indexes for the lines of each conversation.
-movie_lines.txt.zip contains the lines spoken by the characters.
-
-To view my work most easily, click on the .ipynb file.

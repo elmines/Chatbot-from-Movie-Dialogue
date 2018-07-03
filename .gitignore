@@ -1,3 +1,5 @@
+__pycache__/
+
 #Extraneous files from the cornell dataset
 __MACOSX/
 
@@ -7,6 +9,13 @@ __MACOSX/
 #Data files (though not the .zip archives)
 *.txt
 
+#Corpus files
+!corpora/*.txt
+!vocab.txt
+
 #Tensorflow checkpoint files
 checkpoint
 *ckpt*
+
+#Documentation (for now)
+doc/
