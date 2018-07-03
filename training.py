@@ -57,8 +57,13 @@ def batch_data(data_placeholders, questions_int, answers_int, batch_size, pad_to
 
 
 
+def show_response(prompt_int, beams, prompts_int_to_vocab, answers_int_to_vocab, pad_q, pad_a, answer_int = None):
+	"""
+	Display the model's response
 
-def show_response(prompt_int, prediction, prompts_int_to_vocab, answers_int_to_vocab, pad_q, pad_a, answer_int = None):
+	:param prompt_int: A 1-D iterable of integers
+	:param beams: Response beams as a 2-D iterable or a single response as a 1-D iterable
+	"""
 	prompt_text = [prompts_int_to_vocab[tok] for tok in prompt_int if tok != pad_q]
 	print("Prompt")
 	print("  Word Ids: {}".format([i for i in prompt_int if i != pad_q]))
@@ -70,13 +75,26 @@ def show_response(prompt_int, prediction, prompts_int_to_vocab, answers_int_to_v
 		print("  Word Ids: {}".format([i for i in answer_int if i != pad_a]))
 		print("      Text: {}".format(answer_text))
 
-	pred_text = [answers_int_to_vocab[tok] for tok in prediction if tok != pad_a]
-	print("\nPrediction")
-	print('  Word Ids: {}'.format([i for i in prediction if i != pad_a]))
-	print('      Text: {}'.format(pred_text))
+	try:
+		beams[0][0]
+	except:
+		beams = [beams] #If only passed in one beam as a vector, add an extra dimension
+	beam_width = len(beams[0])
+
+	for i in range(beam_width):
+		beam = beams[:, i]
+		print()
+		if i == 0:
+			print("Best prediction")
+		else:
+			print("Prediction")
+
+		pred_text = [answers_int_to_vocab[tok] for tok in beam if tok != pad_a]
+		print('  Word Ids: {}'.format([i for i in beam if i != pad_a]))
+		print('      Text: {}'.format(pred_text))
         
 
-#FIXME: Add support for logging
+#TODO: Add support for logging
 class Trainer(object):
 	"""
 	Class describing the state of a models.Seq2Seq's training
@@ -98,11 +116,13 @@ class Trainer(object):
 
 	def check_validation_loss(self, sess, validation_cost):
 		if not( validation_cost >= self._record ):
+			self._stalled_steps = 0
 			self._record = validation_cost
 			self._saver.save(sess, self._best_model_path)
 			print("New record for validation cost--saved to {}".format(self._best_model_path))
 		else:
 			self._stalled_steps += 1
+			print("No new record for validation cost--stalled for {}/{} steps".format(self._stalled_steps, self._max_stalled_steps))
 
 	def inc_epochs_completed(self):
 		self._epochs_completed += 1
@@ -110,7 +130,6 @@ class Trainer(object):
 	@property
 	def finished(self):
 		return (self.epochs_completed >= self.max_epochs) or (self.stalled_steps >= self.max_stalled_steps)
-
 
 	@property
 	def saver(self):
@@ -140,7 +159,7 @@ class Trainer(object):
 def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, valid_feeds=None, train_batch_size=64, valid_batch_size=64, min_epochs_before_validation=2):
 	"""
 	data_placeholders - a tf_collections.DataPlaceholders namedtuple
-	fetches = a tf_collections.Fetches namedtuple	
+	fetches - a tf_collections.Fetches namedtuple	
 	train_feeds - a dictionary of extra feed-value pairs when calling sess.run for training
 	valid_feeds - the validation analog of train_feeds
 	Returns
@@ -161,10 +180,7 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 
 	#Fetches
 	(train_op, train_cost, valid_cost) = (model.train_op, model.train_cost, model.valid_cost)
-	infer_ids = model.infer_ids
-
-
-
+	beams = model.beams
 
 	display_step = 100
 	
@@ -199,10 +215,11 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 				train_start_time = time.time()
 
 
+
 		trainer.inc_epochs_completed()
 		trainer.save_latest(sess)
 
-		#FIXME: For simplicity's sake we're just performing validation after each epoch
+		#TODO: For simplicity's sake we're just performing validation after each epoch
 		#VALIDATION CHECK
 		if trainer.epochs_completed >= min_epochs_before_validation:
 			print("Shuffling validation data . . .")
@@ -217,7 +234,7 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 				if batch_ii == 0:
 					sample_prompts = feed_dict[data_placeholders.input_data]
 					sample_answers = feed_dict[data_placeholders.targets]
-					loss, infer_ids_output = sess.run([valid_cost, infer_ids], augmented_feed_dict)
+					loss, beams_output = sess.run([valid_cost, beams], augmented_feed_dict)
 				else:
 					[loss] = sess.run([valid_cost],augmented_feed_dict)
 			
@@ -226,14 +243,15 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 				tot_valid_loss += batch_tokens*loss
 
 
+
 			duration = time.time() - valid_start_time
 			avg_valid_loss = tot_valid_loss / tot_valid_tokens
-			
+			 
 			print("Processed validation set in {:>4.2f} seconds".format(duration))
 			print("Loss-per-Token = {}".format(avg_valid_loss))
 			trainer.check_validation_loss(sess, avg_valid_loss)
 			valid_check_no += 1
-			show_response(sample_prompts[0], infer_ids_output[0], prompts_int_to_vocab, answers_int_to_vocab, pad_q=pad_int, pad_a=pad_int, answer_int=sample_answers[0])
+			show_response(sample_prompts[0], beams_output[0], prompts_int_to_vocab, answers_int_to_vocab, pad_q=pad_int, pad_a=pad_int, answer_int=sample_answers[0])
                 
 
 

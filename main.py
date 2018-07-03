@@ -101,35 +101,35 @@ class VADExp(Experiment):
 
 		self.prep_data()
 
-	def run(self):
+	def run(self, train_affect=False):
 		tf.reset_default_graph()
 		output_layer = tf.layers.Dense(len(self.wordVecsWithMeta),bias_initializer=tf.zeros_initializer(),activation=tf.nn.relu)
-		model = models.VADAppended(self.wordVecsWithMeta, self.go_token, self.eos_token, output_layer=output_layer, affect_strength = 0.2)
+		model = models.VADAppended(self.wordVecsWithMeta, self.go_token, self.eos_token, output_layer=output_layer, affect_strength = 0.2, beam_width=10)
 
 
-		xent_epochs = 8
+		xent_epochs = 15 
 		train_feeds = {model.keep_prob: 0.75}
 		valid_feeds = {model.keep_prob: 1}
 
-		trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, max_epochs=xent_epochs)
-		text_data = tf_collections.TextData(prompts_int2vocab=self.int2vocab,
-						answers_int2vocab=self.int2vocab,
+		trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, max_epochs=xent_epochs, max_stalled_steps=5)
+		text_data = tf_collections.TextData(prompts_int2vocab=self.int2vocab, answers_int2vocab=self.int2vocab,
 						unk_int=self.unk_int, eos_int=self.eos_token, pad_int=self.pad_token)
 
 		with tf.Session() as sess:
 			sess.run(tf.global_variables_initializer())
-			training.training_loop(sess, model, trainer, self.datasets, text_data, train_feeds, valid_feeds, min_epochs_before_validation=2)
+			training.training_loop(sess, model, trainer, self.datasets, text_data, train_feeds, valid_feeds, min_epochs_before_validation=1)
 
-			affect_epochs = (trainer.epochs_completed // 4) + 1*(trainer.epochs_completed < 4)
-			total_epochs = trainer.epochs_completed + affect_epochs
-			train_feeds[model.train_affect] = True
-			sys.stderr.write("Switching from cross-entropy to maximum affective content . . .\n")
+			if train_affect:
+				affect_epochs = (trainer.epochs_completed // 4) + 1*(trainer.epochs_completed < 4)
+				total_epochs = trainer.epochs_completed + affect_epochs
+				train_feeds[model.train_affect] = True
+				print("Switching from cross-entropy to maximum affective content . . .")
 
-			affect_trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, epochs_completed=trainer.epochs_completed,
+				affect_trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, epochs_completed=trainer.epochs_completed,
 						max_epochs=total_epochs, saver=trainer.saver,
 						best_valid_cost = trainer.best_valid_cost)
 
-			training.training_loop(sess, model, affect_trainer, self.datasets, text_data, train_feeds, valid_feeds)	
+				training.training_loop(sess, model, affect_trainer, self.datasets, text_data, train_feeds, valid_feeds)	
 
 class Aff2VecExp(Experiment):
 	def __init__(self, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", counterfit=True):
@@ -149,19 +149,19 @@ class Aff2VecExp(Experiment):
 	def run(self):
 		tf.reset_default_graph()
 		output_layer = tf.layers.Dense(len(self.wordVecsWithMeta),bias_initializer=tf.zeros_initializer(),activation=tf.nn.relu)
-		model = models.Aff2Vec(self.wordVecsWithMeta, self.wordVecsWithMeta, self.go_token, self.eos_token, output_layer=output_layer)
+		model = models.Aff2Vec(self.wordVecsWithMeta, self.wordVecsWithMeta, self.go_token, self.eos_token, output_layer=output_layer, beam_width=10)
 
 		xent_epochs = 15
 		train_feeds = {model.keep_prob: 0.75}
 		valid_feeds = {model.keep_prob: 1}
 
-		trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, max_epochs=xent_epochs, max_stalled_steps=2)
+		trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, max_epochs=xent_epochs, max_stalled_steps=5)
 		text_data = tf_collections.TextData(prompts_int2vocab=self.int2vocab, answers_int2vocab=self.int2vocab,
 						unk_int=self.unk_int, eos_int=self.eos_token, pad_int=self.pad_token)
 
 		with tf.Session() as sess:
 			sess.run(tf.global_variables_initializer())
-			training.training_loop(sess, model, trainer, self.datasets, text_data, train_feeds, valid_feeds, min_epochs_before_validation=2)
+			training.training_loop(sess, model, trainer, self.datasets, text_data, train_feeds, valid_feeds, min_epochs_before_validation=1)
 
 	
 if __name__ == "__main__":

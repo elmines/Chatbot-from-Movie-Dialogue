@@ -37,42 +37,79 @@ def _process_decoding_input(target_data, go_token):
         ending = tf.strided_slice(target_data, [0, 0], [batch_size, -1], [1, 1])
         dec_input = tf.concat( [tf.fill([batch_size, 1], go_token), ending], 1)
         return dec_input
-def _decoding_layer(enc_state, enc_outputs, dec_embed_input, dec_embeddings, dec_cell, attn_size, output_layer, source_lengths, target_lengths, go_token, eos_token):
-	batch_size = tf.shape(source_lengths)[0]
-	
-	attn_mech = tf.contrib.seq2seq.BahdanauAttention(num_units=attn_size, memory=enc_outputs, memory_sequence_length=source_lengths)
-	attn_cell = tf.contrib.seq2seq.AttentionWrapper(dec_cell, attn_mech, attention_layer_size=dec_cell.output_size)
-	
-	init_attn_dec_state = attn_cell.zero_state(batch_size, tf.float32).clone(cell_state=enc_state)
-	
-	decoder_gen = lambda helper: tf.contrib.seq2seq.BasicDecoder(attn_cell, helper, init_attn_dec_state,
-		output_layer = output_layer)
-	
-	with tf.variable_scope("decoding") as scope:
-		#TRAINING
-		train_helper = tf.contrib.seq2seq.TrainingHelper(dec_embed_input, target_lengths)
-		train_decoder = decoder_gen(train_helper)
-		train_outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(train_decoder, impute_finished=True, scope=scope)
-		train_logits = train_outputs.rnn_output
-	
-		#scope.reuse_variables()
-		#INFERENCE
-		infer_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(dec_embeddings, start_tokens = tf.tile([go_token], [batch_size]), end_token = eos_token)
-		infer_decoder = decoder_gen(infer_helper)
-		infer_outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(infer_decoder, impute_finished=True, maximum_iterations=tf.round(tf.reduce_max(source_lengths) * 2), scope=scope)
-		infer_ids = infer_outputs.sample_id
-	
-	return train_logits, infer_ids
 
+
+def _beam_search_decoder(enc_state, enc_outputs, dec_embed_input, dec_embeddings, dec_cell, attn_size, output_layer, source_lengths, target_lengths, go_token, eos_token, beam_width=1):
+	"""
+	Produces an output given the state and outputs of the encoder, using beam search for inference.
+
+	:param tf.Tensor                   enc_state: The final state of the encoder
+	:param tf.Tensor                 enc_outputs: The outputs of the encoder to attend over
+	:param                        dec_embeddings: The word embeddings used for decoding
+	:param tf.contrib.rnn.RNNCell       dec_cell: The cell to be used for decoding
+	:param int                         attn_size: The size of the attention mechanism
+	:param tf.layers.Layer          output_layer: TensorFlow layer applied to the decoder output
+	:param tf.Tensor              source_lengths: A vector of integers where each entry is the length of an input sample
+	:param tf.Tensor              target_lengths: A vector of integers where each entry is the length of a target sample
+	:param int                          go_token: id for the token fed into the first decoder cell
+	:param int                         eos_token: End-Of-Sequence token that tells the decoder to stop decoding
+	:param int                        beam_width: The number of beams to generate during inference (beam_width=1 performs greedy decoding)
+
+	:returns A 2-tuple of the logits produced using a training decoder and the beams produced using a beam search decoder
+	:rtype tuple(tf.Tensor, tf.Tensor)
+	"""
+
+	batch_size = tf.shape(source_lengths)[0]
+	with tf.variable_scope("decoding", reuse=tf.AUTO_REUSE) as decoding_scope:
+		init_dec_state_size = batch_size
+		#TRAINING
+		train_attn = tf.contrib.seq2seq.BahdanauAttention(num_units=attn_size, memory=enc_outputs,
+		                                                 memory_sequence_length=source_lengths)
+		
+		train_cell = tf.contrib.seq2seq.AttentionWrapper(dec_cell, train_attn, attention_layer_size=dec_cell.output_size)
+		
+		
+		helper = tf.contrib.seq2seq.TrainingHelper(dec_embed_input, target_lengths, time_major=False)
+		train_decoder = tf.contrib.seq2seq.BasicDecoder(train_cell, helper,
+								train_cell.zero_state(init_dec_state_size, tf.float32).clone(cell_state=enc_state),
+		                    				output_layer = output_layer)
+		outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(train_decoder, impute_finished=True, scope=decoding_scope)
+		logits = outputs.rnn_output
+		
+		#INFERENCE
+		#Tile inputs
+		enc_state = tf.contrib.seq2seq.tile_batch(enc_state, beam_width)
+		enc_outputs = tf.contrib.seq2seq.tile_batch(enc_outputs, beam_width)
+		tiled_source_lengths = tf.contrib.seq2seq.tile_batch(source_lengths, beam_width)
+		init_dec_state_size *= beam_width
+		
+		infer_attn = tf.contrib.seq2seq.BahdanauAttention(num_units=attn_size,memory=enc_outputs,memory_sequence_length=tiled_source_lengths)
+		infer_cell = tf.contrib.seq2seq.AttentionWrapper(dec_cell, infer_attn,attention_layer_size=dec_cell.output_size)
+		
+		
+		start_tokens = tf.tile( [go_token], [batch_size]) #Not by batch_size*beam_width, strangely
+		end_token = eos_token
+		
+		decoder = tf.contrib.seq2seq.BeamSearchDecoder(cell = infer_cell,
+		    embedding = dec_embeddings,
+		    start_tokens = start_tokens, 
+		    end_token = end_token,
+		    beam_width = beam_width,
+		    initial_state = infer_cell.zero_state(init_dec_state_size, tf.float32).clone(cell_state=enc_state),
+		    output_layer = output_layer
+		)  
+		final_decoder_output, _, _ = tf.contrib.seq2seq.dynamic_decode(decoder, scope=decoding_scope, maximum_iterations=tf.reduce_max(source_lengths*2))
+		
+		beams = final_decoder_output.predicted_ids
+	            
+	return logits, beams
 
 class Seq2Seq(object):
 	"""
 	Abstract class representing standard sequence-to-sequence model
 	"""
 
-	def __init__(self, enc_embeddings, dec_embeddings, go_token, eos_token,
-			num_layers=1, rnn_size=1024, attn_size=256, output_layer=None,
-			learning_rate=0.0001):
+	def __init__(self, enc_embeddings, dec_embeddings, go_token, eos_token, num_layers=1, rnn_size=1024, attn_size=256, output_layer=None, learning_rate=0.0001, beam_width=1):
 		"""
 		:param enc_embeddings: Word embeddings for encoder
 		:param dec_embeddings: Word embeddings for decoder
@@ -80,9 +117,10 @@ class Seq2Seq(object):
 		:param int eos_token: End-Of-Sequence token that tells the decoder to stop decoding
 		:param int num_layers: Number of layers for both the encoder and decoder
 		:param int rnn_size: Size of RNN cell hidden state
-		:param int att_size: Size of the attention mechanism
+		:param int attn_size: Size of the attention mechanism
 		:param tf.layers.Layer output_layer: TensorFlow layer applied to the decoder output
-		:param float learning_rate - Scalar determining how far to follow a gradient
+		:param float learning_rate: Scalar determining how far to follow a gradient
+		:param int beam_width: The number of beams to generate during inference (beam_width=1 performs greedy decoding)
 		"""
 
 		self._data_placeholders = _create_placeholders()
@@ -107,8 +145,9 @@ class Seq2Seq(object):
 	
 	
 		dec_cell = _multi_dropout_cell(rnn_size, self._keep_prob, num_layers)
-		self._train_logits, self._infer_ids = _decoding_layer(init_dec_state, concatenated_enc_output, self._dec_embed_input, dec_embeddings,
-	                        dec_cell, attn_size, output_layer, self._source_lengths, self._target_lengths, go_token, eos_token)
+		self._beam_width = beam_width
+		self._train_logits, self._beams = _beam_search_decoder(init_dec_state, concatenated_enc_output, self._dec_embed_input, dec_embeddings,
+	                        dec_cell, attn_size, output_layer, self._source_lengths, self._target_lengths, go_token, eos_token, self._beam_width)
 	
 		self._eval_mask = tf.sequence_mask(self._target_lengths, dtype=tf.float32)
 		self._xent = tf.contrib.seq2seq.sequence_loss(self._train_logits, self._targets, self.eval_mask)
@@ -147,8 +186,6 @@ class Seq2Seq(object):
 	def keep_prob(self):
 		return self._keep_prob
 
-
-
 	@property
 	def data_placeholders(self):
 		return self._data_placeholders
@@ -170,8 +207,13 @@ class Seq2Seq(object):
 		return self._train_logits
 
 	@property
-	def infer_ids(self):
-		return self._infer_ids
+	def beams(self):
+		"""The inferred beams of dimensions [batch_size, max_time_step, beam_width]"""
+		return self._beams
+
+	@property
+	def beam_width(self):
+		return self._beam_width
 
 	@property
 	def optimizer(self):
@@ -207,14 +249,14 @@ class VADAppended(Seq2Seq):
 
 	def __init__(self, full_embeddings, go_token, eos_token,
                 num_layers=1, rnn_size=1024, attn_size=256, output_layer=None,
-		keep_prob = 1, learning_rate=0.0001,
+		keep_prob = 1, learning_rate=0.0001, beam_width=1,
  		affect_strength=0.5):
 		"""
 		affect_strength - hyperparameter in the range [0.0, 1.0)
 		"""
 		
 		Seq2Seq.__init__(self, full_embeddings, full_embeddings,go_token, eos_token,
-				num_layers=num_layers,rnn_size=rnn_size,attn_size=attn_size,output_layer=output_layer, learning_rate=learning_rate)
+				num_layers=num_layers,rnn_size=rnn_size,attn_size=attn_size,output_layer=output_layer, learning_rate=learning_rate, beam_width=beam_width)
 
 		emot_embeddings = full_embeddings[:, -3: ]
 		neutral_vector = tf.constant([5.0, 1.0, 5.0], dtype=tf.float32)
