@@ -7,6 +7,13 @@ import loss_functions
 import metrics
 
 def _create_placeholders():
+	"""
+	Creates tf.placeholder objects for representing the source and target data.
+
+	:return The placeholder varibles
+	:rtype tf_collections.DataPlaceholders
+	"""
+
 	#                                          batch_size  time
 	input_data =     tf.placeholder(tf.int32, [None,       None], name='input_data')
 	targets =        tf.placeholder(tf.int32, [None,       None], name='targets')
@@ -59,13 +66,23 @@ def _decoding_layer(enc_state, enc_outputs, dec_embed_input, dec_embeddings, dec
 
 
 class Seq2Seq(object):
+	"""
+	Abstract class representing standard sequence-to-sequence model
+	"""
 
 	def __init__(self, enc_embeddings, dec_embeddings, go_token, eos_token,
 			num_layers=1, rnn_size=1024, attn_size=256, output_layer=None,
 			learning_rate=0.0001):
 		"""
-		placeholders - A DataPlaceholders namedtuple
-		learning_rate - A constant (you can't decay it over time)
+		:param enc_embeddings: Word embeddings for encoder
+		:param dec_embeddings: Word embeddings for decoder
+		:param int go_token: id for the token fed into the first decoder cell
+		:param int eos_token: End-Of-Sequence token that tells the decoder to stop decoding
+		:param int num_layers: Number of layers for both the encoder and decoder
+		:param int rnn_size: Size of RNN cell hidden state
+		:param int att_size: Size of the attention mechanism
+		:param tf.layers.Layer output_layer: TensorFlow layer applied to the decoder output
+		:param float learning_rate - Scalar determining how far to follow a gradient
 		"""
 
 		self._data_placeholders = _create_placeholders()
