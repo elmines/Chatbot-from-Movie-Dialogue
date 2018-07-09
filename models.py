@@ -6,6 +6,12 @@ import tf_collections
 import loss_functions
 import metrics
 
+#FIXME
+def write_vars(path, variables):
+	with open(path, "w", encoding="utf-8") as out:
+		for var in variables:
+			out.write("{}\n".format(var))	
+
 def _create_placeholders():
 	"""
 	Creates tf.placeholder objects for representing the source and target data.
@@ -82,8 +88,11 @@ def _beam_search_decoder(enc_state, enc_outputs, dec_embed_input, dec_embeddings
 		enc_outputs = tf.contrib.seq2seq.tile_batch(enc_outputs, beam_width)
 		tiled_source_lengths = tf.contrib.seq2seq.tile_batch(source_lengths, beam_width)
 		init_dec_state_size *= beam_width
-		
+
+
+		write_vars("globalA.txt", tf.global_variables())		
 		infer_attn = tf.contrib.seq2seq.BahdanauAttention(num_units=attn_size,memory=enc_outputs,memory_sequence_length=tiled_source_lengths)
+		write_vars("globalB.txt", tf.global_variables())		
 		infer_cell = tf.contrib.seq2seq.AttentionWrapper(dec_cell, infer_attn,attention_layer_size=dec_cell.output_size)
 		
 		
