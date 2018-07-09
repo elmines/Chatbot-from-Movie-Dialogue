@@ -27,7 +27,24 @@ def pad_sentence_batch(sentence_batch, pad_token):
     """Pad sentences with <PAD> so that each sentence of a batch has the same length"""
     max_sentence_length = max([len(sentence) for sentence in sentence_batch])
     return [sentence + [pad_token] * (max_sentence_length - len(sentence)) for sentence in sentence_batch]
-def batch_data(data_placeholders, questions_int, answers_int, batch_size, pad_token):
+
+def single_batch(data_placeholders, questions_batch, answers_batch, pad_token):
+	source_lengths = np.array( [len(sentence) for sentence in questions_batch] )
+	target_lengths = np.array( [len(sentence) for sentence in answers_batch])
+
+	pad_prompts_batch = np.array(pad_sentence_batch(questions_batch, pad_token))
+	pad_answers_batch = np.array(pad_sentence_batch(answers_batch, pad_token))
+
+	#DataPlaceholder variables
+	feed_dict = {
+			data_placeholders.input_data     : pad_prompts_batch,
+			data_placeholders.targets        : pad_answers_batch,
+			data_placeholders.source_lengths : source_lengths,
+			data_placeholders.target_lengths : target_lengths
+		}
+	return feed_dict
+
+def batch_feeds(data_placeholders, questions_int, answers_int, batch_size, pad_token):
 	"""
 	data_placeholders - a tf_collections.DataPlaceholders object
 
@@ -38,22 +55,14 @@ def batch_data(data_placeholders, questions_int, answers_int, batch_size, pad_to
 		start_i = batch_i * batch_size
 		questions_batch = questions_int[start_i:start_i + batch_size]
 		answers_batch = answers_int[start_i:start_i + batch_size]
-        
-		source_lengths = np.array( [len(sentence) for sentence in questions_batch] )
-		target_lengths = np.array( [len(sentence) for sentence in answers_batch])
+		yield single_batch(data_placeholders, questions_batch, answers_batch, pad_token)
 
-		pad_prompts_batch = np.array(pad_sentence_batch(questions_batch, pad_token))
-		pad_answers_batch = np.array(pad_sentence_batch(answers_batch, pad_token))
+	remainder = len(questions_int) % batch_size
+	questions_batch = questions_int[-remainder:]
+	answers_batch = questions_int[-remainder:]
 
-		#DataPlaceholder variables
-		feed_dict = {
-				data_placeholders.input_data     : pad_prompts_batch,
-				data_placeholders.targets        : pad_answers_batch,
-				data_placeholders.source_lengths : source_lengths,
-				data_placeholders.target_lengths : target_lengths
-			}
-
-		yield feed_dict
+	yield single_batch(data_placeholders, questions_batch, answers_batch, pad_token)
+	
 
 
 
@@ -193,7 +202,7 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 		tot_train_loss = 0
 		train_start_time = time.time()
 		for batch_i, feed_dict in \
-			enumerate(batch_data(data_placeholders, train_prompts_int, train_answers_int, train_batch_size, pad_int)):
+			enumerate(batch_feeds(data_placeholders, train_prompts_int, train_answers_int, train_batch_size, pad_int)):
     
 			augmented_feed_dict = merge_dicts(feed_dict, train_feeds)
 			_, loss = sess.run([train_op, train_cost], augmented_feed_dict)
@@ -228,7 +237,7 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 			tot_valid_tokens = 0
 			tot_valid_loss = 0
 			valid_start_time = time.time()
-			for batch_ii, feed_dict in enumerate(batch_data(data_placeholders, valid_prompts_int, valid_answers_int, valid_batch_size, pad_int)):
+			for batch_ii, feed_dict in enumerate(batch_feeds(data_placeholders, valid_prompts_int, valid_answers_int, valid_batch_size, pad_int)):
 				augmented_feed_dict = merge_dicts(feed_dict, valid_feeds)
 			
 				if batch_ii == 0:
