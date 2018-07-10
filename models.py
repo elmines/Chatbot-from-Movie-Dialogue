@@ -45,7 +45,7 @@ def _process_decoding_input(target_data, go_token):
         return dec_input
 
 
-def _beam_search_decoder(enc_state, enc_outputs, dec_embed_input, dec_embeddings, dec_cell, attn_size, output_layer, source_lengths, target_lengths, go_token, eos_token, beam_width=1):
+def _beam_search_decoder(enc_state, enc_outputs, dec_embed_input, dec_embeddings, dec_cell, attn_size, output_layer, source_lengths, target_lengths, go_token, eos_token, beam_width=1, infer=False):
 	"""
 	Produces an output given the state and outputs of the encoder, using beam search for inference.
 
@@ -60,58 +60,48 @@ def _beam_search_decoder(enc_state, enc_outputs, dec_embed_input, dec_embeddings
 	:param int                          go_token: id for the token fed into the first decoder cell
 	:param int                         eos_token: End-Of-Sequence token that tells the decoder to stop decoding
 	:param int                        beam_width: The number of beams to generate during inference (beam_width=1 performs greedy decoding)
+	:param boolean                         infer: Whether training or inference is being performed
 
-	:returns A 2-tuple of the logits produced using a training decoder and the beams produced using a beam search decoder
-	:rtype tuple(tf.Tensor, tf.Tensor)
+	:returns Either the training logits or the inferred beams, depending on `infer`
+	:rtype tf.Tensor
 	"""
-
 	batch_size = tf.shape(source_lengths)[0]
-	with tf.variable_scope("decoding", reuse=tf.AUTO_REUSE) as decoding_scope:
-		init_dec_state_size = batch_size
-		#TRAINING
-		train_attn = tf.contrib.seq2seq.BahdanauAttention(num_units=attn_size, memory=enc_outputs,
-		                                                 memory_sequence_length=source_lengths)
-		
-		train_cell = tf.contrib.seq2seq.AttentionWrapper(dec_cell, train_attn, attention_layer_size=dec_cell.output_size)
-		
-		
-		helper = tf.contrib.seq2seq.TrainingHelper(dec_embed_input, target_lengths, time_major=False)
-		train_decoder = tf.contrib.seq2seq.BasicDecoder(train_cell, helper,
-								train_cell.zero_state(init_dec_state_size, tf.float32).clone(cell_state=enc_state),
-		                    				output_layer = output_layer)
-		outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(train_decoder, impute_finished=True, scope=decoding_scope)
-		logits = outputs.rnn_output
-		
-		#INFERENCE
+	init_dec_state_size = batch_size
+	if infer:
 		#Tile inputs
 		enc_state = tf.contrib.seq2seq.tile_batch(enc_state, beam_width)
 		enc_outputs = tf.contrib.seq2seq.tile_batch(enc_outputs, beam_width)
 		tiled_source_lengths = tf.contrib.seq2seq.tile_batch(source_lengths, beam_width)
 		init_dec_state_size *= beam_width
 
+	with tf.variable_scope("decoding") as decoding_scope:
+		#TRAINING
+		attn = tf.contrib.seq2seq.BahdanauAttention(num_units=attn_size, memory=enc_outputs,
+		                                                 memory_sequence_length=source_lengths)
+		attn_cell = tf.contrib.seq2seq.AttentionWrapper(dec_cell, train_attn, attention_layer_size=dec_cell.output_size)
 
-		write_vars("globalA.txt", tf.global_variables())		
-		infer_attn = tf.contrib.seq2seq.BahdanauAttention(num_units=attn_size,memory=enc_outputs,memory_sequence_length=tiled_source_lengths)
-		write_vars("globalB.txt", tf.global_variables())		
-		infer_cell = tf.contrib.seq2seq.AttentionWrapper(dec_cell, infer_attn,attention_layer_size=dec_cell.output_size)
+		if infer:
+			decoder = tf.contrib.seq2seq.BeamSearchDecoder(cell = attn_cell,
+			    embedding = dec_embeddings,
+			    start_tokens = tf.tile( [go_token], [batch_size]) #Not by batch_size*beam_width, strangely, 
+			    end_token = eos_token
+			    beam_width = beam_width,
+			    initial_state = infer_cell.zero_state(init_dec_state_size, tf.float32).clone(cell_state=enc_state),
+			    output_layer = output_layer
+			)  
+			final_decoder_output, _, _ = tf.contrib.seq2seq.dynamic_decode(decoder, scope=decoding_scope, maximum_iterations=tf.reduce_max(source_lengths*2))
+			beams = final_decoder_output.predicted_ids
+			return beams
 		
+		else:	
+			helper = tf.contrib.seq2seq.TrainingHelper(dec_embed_input, target_lengths, time_major=False)
+			train_decoder = tf.contrib.seq2seq.BasicDecoder(attn_cell, helper,
+								train_cell.zero_state(init_dec_state_size, tf.float32).clone(cell_state=enc_state),
+		                    				output_layer = output_layer)
+			outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(train_decoder, impute_finished=True, scope=decoding_scope)
+			logits = outputs.rnn_output
+			return logits
 		
-		start_tokens = tf.tile( [go_token], [batch_size]) #Not by batch_size*beam_width, strangely
-		end_token = eos_token
-		
-		decoder = tf.contrib.seq2seq.BeamSearchDecoder(cell = infer_cell,
-		    embedding = dec_embeddings,
-		    start_tokens = start_tokens, 
-		    end_token = end_token,
-		    beam_width = beam_width,
-		    initial_state = infer_cell.zero_state(init_dec_state_size, tf.float32).clone(cell_state=enc_state),
-		    output_layer = output_layer
-		)  
-		final_decoder_output, _, _ = tf.contrib.seq2seq.dynamic_decode(decoder, scope=decoding_scope, maximum_iterations=tf.reduce_max(source_lengths*2))
-		
-		beams = final_decoder_output.predicted_ids
-	            
-	return logits, beams
 
 class Seq2Seq(object):
 	"""
