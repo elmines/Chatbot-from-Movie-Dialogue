@@ -119,10 +119,6 @@ class Experiment(object):
 		Writes the cleaned prompts and their corresponding response(s) to standard output
 		"""
 
-		write_vars("global.txt", tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES))
-		write_vars("model.txt", tf.get_collection(tf.GraphKeys.MODEL_VARIABLES))
-		write_vars("trainable.txt", tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES))
-		sys.exit(0)
 
 		unk_int = self.data.unk_int
 		vocab2int = self.data.vocab2int
@@ -156,15 +152,18 @@ class VADExp(Experiment):
 
 		full_embeddings = self.data.load_vad(vad_vec_path, regenerate=regenerate)
 		self.wordVecsWithMeta = append_meta(full_embeddings, self.metatoken)
-
+		
+		infer = self.exp_state == ExpState.QUERY
 		tf.reset_default_graph()
 		embeddings_var = tf.constant(self.wordVecsWithMeta, name="embeddings")
 		output_layer = tf.layers.Dense(len(self.wordVecsWithMeta),bias_initializer=tf.zeros_initializer(),activation=tf.nn.relu)
-		self.model = models.VADAppended(embeddings_var, self.go_token, self.eos_token, output_layer=output_layer, affect_strength = 0.2, beam_width=10)
+		self.model = models.VADAppended(embeddings_var, self.go_token, self.eos_token, output_layer=output_layer, affect_strength = 0.2, beam_width=10, infer=infer)
 
 		self.train_feeds = {self.model.keep_prob: 0.75}
 		self.infer_feeds = {self.model.keep_prob: 1}
 
+		write_vars("global.txt", tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES))
+		write_vars("trainable.txt", tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES))
 
 
 	def train(self, train_affect=False):
@@ -193,7 +192,7 @@ class VADExp(Experiment):
 
 class Aff2VecExp(Experiment):
 	def __init__(self, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", exp_state=ExpState.NEW, counterfit=True):
-		Experiment.__init__(self, regenerate, data_dir, w2vec_path, exp_state, restore_path)
+		Experiment.__init__(self, regenerate, data_dir, w2vec_path, exp_state)
 
 		if counterfit:
 			full_embeddings = self.data.load_counterfit("word_Vecs_counterfit_affect.npy", "./w2v_counterfit_append_affect.bin", regenerate=regenerate)
@@ -201,11 +200,11 @@ class Aff2VecExp(Experiment):
 			full_embeddings = self.data.load_retrofit("word_Vecs_retrofit_affect.npy", "./w2v_retrofit_append_affect.bin", regenerate=regenerate)
 		self.wordVecsWithMeta = append_meta(full_embeddings, self.metatoken)
 		
+		infer = self.exp_state == ExpState.QUERY
 		tf.reset_default_graph()
 		embeddings_var = tf.constant(self.wordVecsWithMeta, name="embeddings")
-		#embeddings_var = tf.Variable(self.wordVecsWithMeta, trainable=False, name="embeddings")
 		output_layer = tf.layers.Dense(len(self.wordVecsWithMeta),bias_initializer=tf.zeros_initializer(),activation=tf.nn.relu)
-		self.model = models.Aff2Vec(embeddings_var, embeddings_var, self.go_token, self.eos_token, output_layer=output_layer, beam_width=10)
+		self.model = models.Aff2Vec(embeddings_var, embeddings_var, self.go_token, self.eos_token, output_layer=output_layer, beam_width=10, infer=infer)
 
 		self.train_feeds = {self.model.keep_prob: 0.75}
 		self.infer_feeds = {self.model.keep_prob: 1}

@@ -41,7 +41,7 @@ if __name__ == "__main__":
 		sys.exit(0)
 
 	regenerate = False if args.infer is not None else args.regen_embeddings
-	exp_state = experiment.ExpState.QUERY if args.infer else experiment.ExpState.TRAIN
+	exp_state = experiment.ExpState.QUERY if args.infer else experiment.ExpState.NEW
 	if args.vad:
 		exp = experiment.VADExp(regenerate, exp_state=exp_state)
 	elif args.counter:

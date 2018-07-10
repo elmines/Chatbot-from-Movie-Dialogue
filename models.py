@@ -71,32 +71,31 @@ def _beam_search_decoder(enc_state, enc_outputs, dec_embed_input, dec_embeddings
 		#Tile inputs
 		enc_state = tf.contrib.seq2seq.tile_batch(enc_state, beam_width)
 		enc_outputs = tf.contrib.seq2seq.tile_batch(enc_outputs, beam_width)
-		tiled_source_lengths = tf.contrib.seq2seq.tile_batch(source_lengths, beam_width)
+		source_lengths = tf.contrib.seq2seq.tile_batch(source_lengths, beam_width)
 		init_dec_state_size *= beam_width
 
 	with tf.variable_scope("decoding") as decoding_scope:
 		#TRAINING
-		attn = tf.contrib.seq2seq.BahdanauAttention(num_units=attn_size, memory=enc_outputs,
-		                                                 memory_sequence_length=source_lengths)
-		attn_cell = tf.contrib.seq2seq.AttentionWrapper(dec_cell, train_attn, attention_layer_size=dec_cell.output_size)
+		attn = tf.contrib.seq2seq.BahdanauAttention(attn_size, enc_outputs, source_lengths)
+		attn_cell = tf.contrib.seq2seq.AttentionWrapper(dec_cell, attn, dec_cell.output_size)
 
 		if infer:
 			decoder = tf.contrib.seq2seq.BeamSearchDecoder(cell = attn_cell,
 			    embedding = dec_embeddings,
-			    start_tokens = tf.tile( [go_token], [batch_size]) #Not by batch_size*beam_width, strangely, 
-			    end_token = eos_token
+			    start_tokens = tf.tile( [go_token], [batch_size]), #Not by batch_size*beam_width, strangely, 
+			    end_token = eos_token,
 			    beam_width = beam_width,
-			    initial_state = infer_cell.zero_state(init_dec_state_size, tf.float32).clone(cell_state=enc_state),
+			    initial_state = attn_cell.zero_state(init_dec_state_size, tf.float32).clone(cell_state=enc_state),
 			    output_layer = output_layer
 			)  
-			final_decoder_output, _, _ = tf.contrib.seq2seq.dynamic_decode(decoder, scope=decoding_scope, maximum_iterations=tf.reduce_max(source_lengths*2))
+			final_decoder_output, _, _ = tf.contrib.seq2seq.dynamic_decode(decoder, scope=decoding_scope, maximum_iterations=tf.reduce_max(source_lengths)*2)
 			beams = final_decoder_output.predicted_ids
 			return beams
 		
 		else:	
-			helper = tf.contrib.seq2seq.TrainingHelper(dec_embed_input, target_lengths, time_major=False)
+			helper = tf.contrib.seq2seq.TrainingHelper(dec_embed_input, target_lengths)
 			train_decoder = tf.contrib.seq2seq.BasicDecoder(attn_cell, helper,
-								train_cell.zero_state(init_dec_state_size, tf.float32).clone(cell_state=enc_state),
+								attn_cell.zero_state(init_dec_state_size, tf.float32).clone(cell_state=enc_state),
 		                    				output_layer = output_layer)
 			outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(train_decoder, impute_finished=True, scope=decoding_scope)
 			logits = outputs.rnn_output
@@ -108,7 +107,7 @@ class Seq2Seq(object):
 	Abstract class representing standard sequence-to-sequence model
 	"""
 
-	def __init__(self, enc_embeddings, dec_embeddings, go_token, eos_token, num_layers=1, rnn_size=1024, attn_size=256, output_layer=None, learning_rate=0.0001, beam_width=1):
+	def __init__(self, enc_embeddings, dec_embeddings, go_token, eos_token, num_layers=1, rnn_size=1024, attn_size=256, output_layer=None, learning_rate=0.0001, beam_width=1, infer=False):
 		"""
 		:param enc_embeddings: Word embeddings for encoder
 		:param dec_embeddings: Word embeddings for decoder
@@ -120,6 +119,7 @@ class Seq2Seq(object):
 		:param tf.layers.Layer output_layer: TensorFlow layer applied to the decoder output
 		:param float learning_rate: Scalar determining how far to follow a gradient
 		:param int beam_width: The number of beams to generate during inference (beam_width=1 performs greedy decoding)
+		:param boolean infer: Whether inference or training is being performed
 		"""
 
 		self._data_placeholders = _create_placeholders()
@@ -145,14 +145,23 @@ class Seq2Seq(object):
 	
 		dec_cell = _multi_dropout_cell(rnn_size, self._keep_prob, num_layers)
 		self._beam_width = beam_width
-		self._train_logits, self._beams = _beam_search_decoder(init_dec_state, concatenated_enc_output, self._dec_embed_input, dec_embeddings,
-	                        dec_cell, attn_size, output_layer, self._source_lengths, self._target_lengths, go_token, eos_token, self._beam_width)
-	
-		self._eval_mask = tf.sequence_mask(self._target_lengths, dtype=tf.float32)
-		self._xent = tf.contrib.seq2seq.sequence_loss(self._train_logits, self._targets, self.eval_mask)
-		self._perplexity = tf.contrib.seq2seq.sequence_loss(self._train_logits, self._targets, self.eval_mask, softmax_loss_function=metrics.perplexity)
-	
-		self._optimizer = tf.train.AdamOptimizer(learning_rate)
+		self._infer = infer
+		decoder_output = _beam_search_decoder(init_dec_state, concatenated_enc_output, self._dec_embed_input, dec_embeddings,
+	                        dec_cell, attn_size, output_layer, self._source_lengths, self._target_lengths, go_token, eos_token, self._beam_width, infer)
+		if infer:
+			self._beams = decoder_output
+			self._train_logits = None
+			self._eval_mask = None
+			self._xent = None
+			self._perplexity = None
+			self._optimizer = None
+		else:
+			self._train_logits = decoder_output
+			self._eval_mask = tf.sequence_mask(self._target_lengths, dtype=tf.float32)
+			self._xent = tf.contrib.seq2seq.sequence_loss(self._train_logits, self._targets, self.eval_mask)
+			self._perplexity = tf.contrib.seq2seq.sequence_loss(self._train_logits, self._targets, self.eval_mask, softmax_loss_function=metrics.perplexity)
+			self._optimizer = tf.train.AdamOptimizer(learning_rate)
+			self._beams = None
 
 
 	#####COST/LOSS######
@@ -228,10 +237,14 @@ class Seq2Seq(object):
 class Aff2Vec(Seq2Seq):
 	def __init__(self, *args, **kwargs):
 		super(Aff2Vec, self).__init__(*(args), **(kwargs))
-	
-		gradients = self.optimizer.compute_gradients(self.xent)
-		capped_gradients = [(tf.clip_by_value(grad, -5., 5.), var) for grad, var in gradients if grad is not None]
-		self._train_op = self.optimizer.apply_gradients(capped_gradients)
+
+		infer = kwargs["infer"]
+		if not infer:
+			gradients = self.optimizer.compute_gradients(self.xent)
+			capped_gradients = [(tf.clip_by_value(grad, -5., 5.), var) for grad, var in gradients if grad is not None]
+			self._train_op = self.optimizer.apply_gradients(capped_gradients)
+		else:
+			self._train_op = None
 	@property
 	def train_cost(self):
 		return self.xent
@@ -248,24 +261,30 @@ class VADAppended(Seq2Seq):
 
 	def __init__(self, full_embeddings, go_token, eos_token,
                 num_layers=1, rnn_size=1024, attn_size=256, output_layer=None,
-		keep_prob = 1, learning_rate=0.0001, beam_width=1,
+		keep_prob = 1, learning_rate=0.0001, beam_width=1, infer=False,
  		affect_strength=0.5):
 		"""
 		affect_strength - hyperparameter in the range [0.0, 1.0)
 		"""
 		
 		Seq2Seq.__init__(self, full_embeddings, full_embeddings,go_token, eos_token,
-				num_layers=num_layers,rnn_size=rnn_size,attn_size=attn_size,output_layer=output_layer, learning_rate=learning_rate, beam_width=beam_width)
+				num_layers=num_layers,rnn_size=rnn_size,attn_size=attn_size,output_layer=output_layer, learning_rate=learning_rate, beam_width=beam_width, infer=infer)
 
-		emot_embeddings = full_embeddings[:, -3: ]
-		neutral_vector = tf.constant([5.0, 1.0, 5.0], dtype=tf.float32)
-		affective_loss = loss_functions.max_affective_content(affect_strength, self.train_logits, self.targets, emot_embeddings, neutral_vector, self.eval_mask)
+		#This is a variable, rather than a computation, so it should be kept if we ever, say, want to train a model, query, later come back and train more . . .
 		self._train_affect = tf.placeholder_with_default(False, shape=())
-		self._train_cost = tf.cond(self._train_affect, true_fn= lambda: affective_loss, false_fn= lambda: self.xent)
 
-		gradients = self.optimizer.compute_gradients(self._train_cost)
-		capped_gradients = [(tf.clip_by_value(grad, -5., 5.), var) for grad, var in gradients if grad is not None]
-		self._train_op = self.optimizer.apply_gradients(capped_gradients)
+		if not infer:
+			emot_embeddings = full_embeddings[:, -3: ]
+			neutral_vector = tf.constant([5.0, 1.0, 5.0], dtype=tf.float32)
+			affective_loss = loss_functions.max_affective_content(affect_strength, self.train_logits, self.targets, emot_embeddings, neutral_vector, self.eval_mask)
+			self._train_cost = tf.cond(self._train_affect, true_fn= lambda: affective_loss, false_fn= lambda: self.xent)
+
+			gradients = self.optimizer.compute_gradients(self._train_cost)
+			capped_gradients = [(tf.clip_by_value(grad, -5., 5.), var) for grad, var in gradients if grad is not None]
+			self._train_op = self.optimizer.apply_gradients(capped_gradients)
+		else:
+			self._train_cost = None
+			self._train_op = None	
 
 	@property
 	def train_affect(self):

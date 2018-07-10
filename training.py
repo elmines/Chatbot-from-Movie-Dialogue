@@ -63,46 +63,6 @@ def batch_feeds(data_placeholders, questions_int, answers_int, batch_size, pad_t
 
 	yield single_batch(data_placeholders, questions_batch, answers_batch, pad_token)
 	
-
-
-
-def show_response(prompt_int, beams, prompts_int_to_vocab, answers_int_to_vocab, pad_q, pad_a, answer_int = None):
-	"""
-	Display the model's response
-
-	:param prompt_int: A 1-D iterable of integers
-	:param beams: Response beams as a 2-D iterable or a single response as a 1-D iterable
-	"""
-	prompt_text = [prompts_int_to_vocab[tok] for tok in prompt_int if tok != pad_q]
-	print("Prompt")
-	print("  Word Ids: {}".format([i for i in prompt_int if i != pad_q]))
-	print("      Text: {}".format(prompt_text))
-    
-	if answer_int is not None:
-		answer_text = [answers_int_to_vocab[tok] for tok in answer_int if tok != pad_a]
-		print("Target Answer")
-		print("  Word Ids: {}".format([i for i in answer_int if i != pad_a]))
-		print("      Text: {}".format(answer_text))
-
-	try:
-		beams[0][0]
-	except:
-		beams = [beams] #If only passed in one beam as a vector, add an extra dimension
-	beam_width = len(beams[0])
-
-	for i in range(beam_width):
-		beam = beams[:, i]
-		print()
-		if i == 0:
-			print("Best prediction")
-		else:
-			print("Prediction")
-
-		pred_text = [answers_int_to_vocab[tok] for tok in beam if tok != pad_a]
-		print('  Word Ids: {}'.format([i for i in beam if i != pad_a]))
-		print('      Text: {}'.format(pred_text))
-        
-
 #TODO: Add support for logging
 class Trainer(object):
 	"""
@@ -239,18 +199,10 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 			valid_start_time = time.time()
 			for batch_ii, feed_dict in enumerate(batch_feeds(data_placeholders, valid_prompts_int, valid_answers_int, valid_batch_size, pad_int)):
 				augmented_feed_dict = merge_dicts(feed_dict, valid_feeds)
-			
-				if batch_ii == 0:
-					sample_prompts = feed_dict[data_placeholders.input_data]
-					sample_answers = feed_dict[data_placeholders.targets]
-					loss, beams_output = sess.run([valid_cost, beams], augmented_feed_dict)
-				else:
-					[loss] = sess.run([valid_cost],augmented_feed_dict)
-			
+				[loss] = sess.run([valid_cost],augmented_feed_dict)
 				batch_tokens = num_tokens(feed_dict)
 				tot_valid_tokens += batch_tokens
 				tot_valid_loss += batch_tokens*loss
-
 
 
 			duration = time.time() - valid_start_time
@@ -260,7 +212,4 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 			print("Loss-per-Token = {}".format(avg_valid_loss))
 			trainer.check_validation_loss(sess, avg_valid_loss)
 			valid_check_no += 1
-			show_response(sample_prompts[0], beams_output[0], prompts_int_to_vocab, answers_int_to_vocab, pad_q=pad_int, pad_a=pad_int, answer_int=sample_answers[0])
-                
-
 
