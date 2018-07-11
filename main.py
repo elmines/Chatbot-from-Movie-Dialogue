@@ -21,8 +21,8 @@ def create_parser():
 	parser = argparse.ArgumentParser(description="Train an affective neural dialog generation model")
 
 	parser.add_argument("--embeddings-only", action="store_true", help="Just generate the embeddings for the specified model(s) and exit")
-	parser.add_argument("--infer", nargs=1, metavar="<path>", help="Text file of prompts")
-	parser.add_argument("--model", "-m", nargs=1, metavar="<path>", help="TensorFlow checkpoint path from which to restore model")
+	parser.add_argument("--infer", metavar="<path>", help="Text file of prompts")
+	parser.add_argument("--model", "-m", metavar="<path>", help="TensorFlow checkpoint path from which to restore model")
 
 	parser.add_argument("--regen-embeddings", action="store_true", help="Regenerate affective embeddings prior to training")
 
@@ -65,8 +65,8 @@ if __name__ == "__main__":
 		sys.exit(0)
 
 	if args.infer is not None:
-		with open(args.infer[1], "r", encoding="utf-8") as prompts_file:
+		with open(args.infer, "r", encoding="utf-8") as prompts_file:
 			prompts_text = prompts_file.readlines()
-		exp.infer(args.infer[0], prompts_text)
+		exp.infer(prompts_text)
 	else:
 		exp.train()

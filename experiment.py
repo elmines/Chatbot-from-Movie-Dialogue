@@ -23,6 +23,14 @@ def write_vars(path, variables):
 		for var in variables:
 			out.write("{}\n".format(var))	
 
+def var_dict(variables):
+	"""
+	:param list(tf.Variable) variables: A list of TensorFlow variables
+	:returns A dictionary mapping variable names to variable objects
+	:rtype dict(str, tf.Variable)
+	"""
+	return {var.name:var for var in variables}
+
 def append_meta(wordVecs, verify_index=None):
 	"""
 	wordVecs - an np array of word embeddings
@@ -111,11 +119,8 @@ class Experiment(object):
 	def train(self):	
 		raise NotImplementedError
 
-	def infer(self, restore_path, prompts_text):
-		raise NotImplementedError
 
-
-	def infer(self, restore_path, prompts_text, pre_clean=False):
+	def infer(self, prompts_text, pre_clean=False):
 		"""
 		:param str       restore_path: TensorFlow checkpoint from which to restore the model
 		:param list(str) prompts_text: Prompts to give the model
@@ -135,9 +140,11 @@ class Experiment(object):
 		prompts_int = [ [vocab2int.get(token, unk_int) for token in seq.split()] for seq in cleaned_prompts]
 		pad_int = self.text_data.pad_int
 
-		saver = tf.train.Saver()
 		with tf.Session() as sess:
-			saver.restore(sess, restore_path)
+			print("Restoring model at {}".format(self.restore_path))
+			self.infer_checkpoint.restore(self.restore_path).assert_consumed().run_restore_ops()
+			print(sess.run(tf.report_uninitialized_variables()) , flush=True)
+
 			beam_outputs = test.infer(sess, self.model, prompts_int, self.infer_feeds, self.model.beams, pad_int, batch_size = 32)
 
 
@@ -171,21 +178,37 @@ class VADExp(Experiment):
 		self.infer_feeds = {self.model.keep_prob: 1}
 
 		#Set variables to be saved
-		self.checkpoint = tf.train.Checkpoint()
-		self.checkpoint.trainable_variables = tf.trainable_variables()
-		if self.exp_state != ExpState.QUERY: self.checkpoint.optimizer = self.model.optimizer
+		self.train_checkpoint = None
+		if self.exp_state != ExpState.QUERY:
+			global_dict = var_dict( tf.global_variables() )
+			self.train_checkpoint = tf.train.Checkpoint(**global_dict)
+		train_dict = var_dict(tf.trainable_variables())
+		self.infer_checkpoint = tf.train.Checkpoint(**train_dict)
+
+		#Used to delete excess checkpoints
+		checkpoint_paths = []
+
+	def _save_fn(self, path_prefix, sess):
+		(directory, base) = os.path.split(path_prefix)
+		train_prefix = os.path.join(directory, "train-" + base)
+		infer_prefix = os.path.join(directory, "infer-" + base)
+
+		self.train_checkpoint.save(train_prefix, sess)
+		print("Saved training graph to {}".format(train_prefix))
+		self.infer_checkpoint.save(infer_prefix, sess)
+		print("Saved inference graph to {}".format(infer_prefix))
 
 	def train(self, train_affect=False):
 		if self.exp_state == ExpState.QUERY:
 			raise ValueError("Tried to train a model in query mode.")
 		xent_epochs = 15 
 
-		save_fn = self.checkpoint.save
+		save_fn = self._save_fn
 		trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, save_fn, max_epochs=xent_epochs, max_stalled_steps=5)
 
 		with tf.Session() as sess:
 			if self.exp_state == ExpState.CONT_TRAIN:
-				self.checkpoint(self.restore_path).assert_consumed().restore_ops()
+				self.train_checkpoint.restore(self.restore_path, sess).assert_consumed().run_restore_ops()
 				print("Restored model at {}".format(self.restore_path))
 			else:
 				sess.run(tf.global_variables_initializer())

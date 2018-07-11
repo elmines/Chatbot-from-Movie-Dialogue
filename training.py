@@ -93,16 +93,16 @@ class Trainer(object):
 
 
 		
-	def save_latest(self, sess, verbose=True):
-		path = self.save_fn(self._latest_model_path, sess)
-		if verbose: print("{}/{} epochs completed, saved model to {}".format(self.epochs_completed, self.max_epochs, path))
+	def save_latest(self, sess):
+		self.save_fn(self._latest_model_path, sess)
+		print("{}/{} epochs completed".format(self.epochs_completed, self.max_epochs))
 
 	def check_validation_loss(self, sess, validation_cost):
 		if not( validation_cost >= self._record ):
 			self._stalled_steps = 0
 			self._record = validation_cost
-			path = self.save_fn(self._best_model_path, sess)
-			print("New record for validation cost--saved model to {}".format(path))
+			self.save_fn(self._best_model_path, sess)
+			print("New record for validation cost!")
 		else:
 			self._stalled_steps += 1
 			print("No new record for validation cost--stalled for {}/{} steps".format(self._stalled_steps, self._max_stalled_steps))
@@ -199,8 +199,6 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 
 			break
 
-
-
 		trainer.inc_epochs_completed()
 		trainer.save_latest(sess)
 
@@ -222,7 +220,6 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 
 				break
 
-
 			duration = time.time() - valid_start_time
 			avg_valid_loss = tot_valid_loss / tot_valid_tokens
 			 
@@ -231,3 +228,4 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 			trainer.check_validation_loss(sess, avg_valid_loss)
 			valid_check_no += 1
 
+		break
