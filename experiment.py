@@ -95,7 +95,7 @@ class Experiment(object):
 						valid_answers_int=self.valid_answers_int
 					)
 
-		if self.exp_state == ExpState.NEW:
+		if self.exp_state != ExpState.QUERY:
 			#Used to make unique directories, not to identify when a model is saved
 			time_string = time.strftime("%b%d_%H:%M:%S")
 			self.checkpoint_dir = os.path.join("checkpoints", time_string)
@@ -103,11 +103,11 @@ class Experiment(object):
 			self.checkpoint_best = str(self.checkpoint_dir) + "/" + "best_model.ckpt" 
 			self.checkpoint_latest = str(self.checkpoint_dir) + "/" + "latest_model.ckpt"
 			sys.stderr.write("Writing all new model files to {}\n".format(self.checkpoint_dir))
-			self.restore_path = None
-		else:
-			if restore_path is None:
-				raise ValueError("Must provide a restore_path if not creating a new model.")
-			self.restore_path = restore_path
+
+
+		if self.exp_state != ExpState.NEW and restore_path is None:
+			raise ValueError("Must provide a restore_path if not creating a new model.")
+		self.restore_path = restore_path
 
 
 	def train(self):	
@@ -139,7 +139,6 @@ class Experiment(object):
 
 		saver = tf.train.Saver()
 		with tf.Session() as sess:
-			#print_tensors_in_checkpoint_file(restore_path, "", True, True)
 			saver.restore(sess, restore_path)
 			beam_outputs = test.infer(sess, self.model, prompts_int, self.infer_feeds, self.model.beams, pad_int, batch_size = 32)
 
@@ -173,9 +172,6 @@ class VADExp(Experiment):
 		self.train_feeds = {self.model.keep_prob: 0.75}
 		self.infer_feeds = {self.model.keep_prob: 1}
 
-		write_vars("global.txt", tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES))
-		write_vars("trainable.txt", tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES))
-
 
 	def train(self, train_affect=False):
 		if self.exp_state == ExpState.QUERY:
@@ -185,8 +181,8 @@ class VADExp(Experiment):
 		trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, max_epochs=xent_epochs, max_stalled_steps=5)
 
 		with tf.Session() as sess:
-			if self.exp_state == exp_state.CONT_TRAIN:
-				tf.train.Saver().restore(sess, self.restore_path)	
+			if self.exp_state == ExpState.CONT_TRAIN:
+				trainer.saver.restore(sess, self.restore_path)	
 				print("Restored model at {}".format(self.restore_path))
 			else:
 				sess.run(tf.global_variables_initializer())

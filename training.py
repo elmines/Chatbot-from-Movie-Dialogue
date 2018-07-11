@@ -69,7 +69,6 @@ class Trainer(object):
 	Class describing the state of a models.Seq2Seq's training
 	"""
 	def __init__(self, best_model_path, latest_model_path, epochs_completed=0, max_epochs=50, best_valid_cost = float("inf"), saver=None, stalled_steps = 0, max_stalled_steps=float("inf")):
-		self._saver = tf.train.Saver()
 		self._best_model_path = best_model_path
 		self._latest_model_path = latest_model_path
 		self._epochs_completed = epochs_completed
@@ -95,6 +94,10 @@ class Trainer(object):
 
 	def inc_epochs_completed(self):
 		self._epochs_completed += 1
+
+	@property
+	def saver(self):
+		return self._saver
 
 	@property
 	def finished(self):

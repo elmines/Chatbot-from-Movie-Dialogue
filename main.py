@@ -21,7 +21,8 @@ def create_parser():
 	parser = argparse.ArgumentParser(description="Train an affective neural dialog generation model")
 
 	parser.add_argument("--embeddings-only", action="store_true", help="Just generate the embeddings for the specified model(s) and exit")
-	parser.add_argument("--infer", nargs=2, metavar="<path>", help="TensorFlow checkpoint path and path to text file of prompts")
+	parser.add_argument("--infer", nargs=1, metavar="<path>", help="Text file of prompts")
+	parser.add_argument("--model", "-m", nargs=1, metavar="<path>", help="TensorFlow checkpoint path from which to restore model")
 
 	parser.add_argument("--regen-embeddings", action="store_true", help="Regenerate affective embeddings prior to training")
 
@@ -40,14 +41,25 @@ if __name__ == "__main__":
 		experiment.gen_embeddings(args.vad, args.counter, args.retro)
 		sys.exit(0)
 
-	regenerate = False if args.infer is not None else args.regen_embeddings
-	exp_state = experiment.ExpState.QUERY if args.infer else experiment.ExpState.NEW
+	if args.infer:
+		exp_state = experiment.ExpState.QUERY
+		regenerate = False
+		if args.model is None:
+			raise ValueError("Must specify --model/-m for inference")
+	elif args.model:
+		exp_state = experiment.ExpState.CONT_TRAIN
+		regenerate = False
+	else:
+		exp_state = experiment.ExpState.NEW
+		regenerate = args.regen_embeddings
+
+
 	if args.vad:
-		exp = experiment.VADExp(regenerate, exp_state=exp_state)
+		exp = experiment.VADExp(regenerate, exp_state=exp_state, restore_path=args.model)
 	elif args.counter:
-		exp = experiment.Aff2VecExp(regenerate, counterfit=True, exp_state=exp_state)
+		exp = experiment.Aff2VecExp(regenerate, counterfit=True, exp_state=exp_state, restore_path=args.model)
 	elif args.retro:
-		exp = experiment.Aff2VecExp(regenerate, counterfit=False, exp_state=exp_state)
+		exp = experiment.Aff2VecExp(regenerate, counterfit=False, exp_state=exp_state, restore_path=args.model)
 	else:
 		parser.print_help()
 		sys.exit(0)
