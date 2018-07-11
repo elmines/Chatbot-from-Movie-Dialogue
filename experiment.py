@@ -18,6 +18,8 @@ import test
 from preprocessing.corpus import pre_clean_seq
 from preprocessing.corpus import post_clean_seq
 
+from tensorflow.python.tools.inspect_checkpoint import print_tensors_in_checkpoint_file
+
 def write_vars(path, variables):
 	with open(path, "w", encoding="utf-8") as out:
 		for var in variables:
@@ -57,7 +59,7 @@ class ExpState(Enum):
 
 class Experiment(object):
 
-	def __init__(self, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", exp_state=ExpState.NEW):
+	def __init__(self, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", exp_state=ExpState.NEW, restore_path=None):
 		"""
 		:param str restore_path: TensorFlow checkpoint from which to restore a model (only applicable if exp_state != ExpState.NEW)
 		"""
@@ -93,7 +95,7 @@ class Experiment(object):
 						valid_answers_int=self.valid_answers_int
 					)
 
-		if self.exp_state != ExpState.QUERY:
+		if self.exp_state == ExpState.NEW:
 			#Used to make unique directories, not to identify when a model is saved
 			time_string = time.strftime("%b%d_%H:%M:%S")
 			self.checkpoint_dir = os.path.join("checkpoints", time_string)
@@ -101,6 +103,11 @@ class Experiment(object):
 			self.checkpoint_best = str(self.checkpoint_dir) + "/" + "best_model.ckpt" 
 			self.checkpoint_latest = str(self.checkpoint_dir) + "/" + "latest_model.ckpt"
 			sys.stderr.write("Writing all new model files to {}\n".format(self.checkpoint_dir))
+			self.restore_path = None
+		else:
+			if restore_path is None:
+				raise ValueError("Must provide a restore_path if not creating a new model.")
+			self.restore_path = restore_path
 
 
 	def train(self):	
@@ -119,6 +126,9 @@ class Experiment(object):
 		Writes the cleaned prompts and their corresponding response(s) to standard output
 		"""
 
+		if self.exp_state != ExpState.QUERY:
+			raise ValueError("Can only call infer if exp_state == ExpState.QUERY")
+
 
 		unk_int = self.data.unk_int
 		vocab2int = self.data.vocab2int
@@ -129,6 +139,7 @@ class Experiment(object):
 
 		saver = tf.train.Saver()
 		with tf.Session() as sess:
+			#print_tensors_in_checkpoint_file(restore_path, "", True, True)
 			saver.restore(sess, restore_path)
 			beam_outputs = test.infer(sess, self.model, prompts_int, self.infer_feeds, self.model.beams, pad_int, batch_size = 32)
 
@@ -147,8 +158,8 @@ class Experiment(object):
 			sys.stdout.write(line)
 
 class VADExp(Experiment):
-	def __init__(self, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", vad_vec_path="word_Vecs_VAD.npy", exp_state=ExpState.NEW):
-		Experiment.__init__(self, regenerate, data_dir, w2vec_path, exp_state)
+	def __init__(self, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", vad_vec_path="word_Vecs_VAD.npy", exp_state=ExpState.NEW, restore_path=None):
+		Experiment.__init__(self, regenerate, data_dir, w2vec_path, exp_state, restore_path)
 
 		full_embeddings = self.data.load_vad(vad_vec_path, regenerate=regenerate)
 		self.wordVecsWithMeta = append_meta(full_embeddings, self.metatoken)
@@ -174,7 +185,11 @@ class VADExp(Experiment):
 		trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, max_epochs=xent_epochs, max_stalled_steps=5)
 
 		with tf.Session() as sess:
-			sess.run(tf.global_variables_initializer())
+			if self.exp_state == exp_state.CONT_TRAIN:
+				tf.train.Saver().restore(sess, self.restore_path)	
+				print("Restored model at {}".format(self.restore_path))
+			else:
+				sess.run(tf.global_variables_initializer())
 			training.training_loop(sess, self.model, trainer, self.datasets, self.text_data, self.train_feeds, self.infer_feeds, min_epochs_before_validation=1)
 
 			if train_affect:
@@ -191,8 +206,8 @@ class VADExp(Experiment):
 
 
 class Aff2VecExp(Experiment):
-	def __init__(self, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", exp_state=ExpState.NEW, counterfit=True):
-		Experiment.__init__(self, regenerate, data_dir, w2vec_path, exp_state)
+	def __init__(self, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", exp_state=ExpState.NEW, counterfit=True, restore_path=None):
+		Experiment.__init__(self, regenerate, data_dir, w2vec_path, exp_state, restore_path)
 
 		if counterfit:
 			full_embeddings = self.data.load_counterfit("word_Vecs_counterfit_affect.npy", "./w2v_counterfit_append_affect.bin", regenerate=regenerate)
