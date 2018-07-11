@@ -18,8 +18,6 @@ import test
 from preprocessing.corpus import pre_clean_seq
 from preprocessing.corpus import post_clean_seq
 
-from tensorflow.python.tools.inspect_checkpoint import print_tensors_in_checkpoint_file
-
 def write_vars(path, variables):
 	with open(path, "w", encoding="utf-8") as out:
 		for var in variables:
@@ -172,17 +170,22 @@ class VADExp(Experiment):
 		self.train_feeds = {self.model.keep_prob: 0.75}
 		self.infer_feeds = {self.model.keep_prob: 1}
 
+		#Set variables to be saved
+		self.checkpoint = tf.train.Checkpoint()
+		self.checkpoint.trainable_variables = tf.trainable_variables()
+		if self.exp_state != ExpState.QUERY: self.checkpoint.optimizer = self.model.optimizer
 
 	def train(self, train_affect=False):
 		if self.exp_state == ExpState.QUERY:
 			raise ValueError("Tried to train a model in query mode.")
 		xent_epochs = 15 
 
-		trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, max_epochs=xent_epochs, max_stalled_steps=5)
+		save_fn = self.checkpoint.save
+		trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, save_fn, max_epochs=xent_epochs, max_stalled_steps=5)
 
 		with tf.Session() as sess:
 			if self.exp_state == ExpState.CONT_TRAIN:
-				trainer.saver.restore(sess, self.restore_path)	
+				self.checkpoint(self.restore_path).assert_consumed().restore_ops()
 				print("Restored model at {}".format(self.restore_path))
 			else:
 				sess.run(tf.global_variables_initializer())
@@ -194,7 +197,7 @@ class VADExp(Experiment):
 				train_feeds[self.model.train_affect] = True
 				print("Switching from cross-entropy to maximum affective content . . .")
 
-				affect_trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, epochs_completed=trainer.epochs_completed,
+				affect_trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, save_fn, epochs_completed=trainer.epochs_completed,
 						max_epochs=total_epochs, saver=trainer.saver,
 						best_valid_cost = trainer.best_valid_cost)
 

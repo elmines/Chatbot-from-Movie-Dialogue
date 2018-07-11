@@ -68,7 +68,21 @@ class Trainer(object):
 	"""
 	Class describing the state of a models.Seq2Seq's training
 	"""
-	def __init__(self, best_model_path, latest_model_path, epochs_completed=0, max_epochs=50, best_valid_cost = float("inf"), saver=None, stalled_steps = 0, max_stalled_steps=float("inf")):
+	def __init__(self, best_model_path, latest_model_path, save_fn, epochs_completed=0, max_epochs=50, best_valid_cost = float("inf"), stalled_steps = 0, max_stalled_steps=float("inf")):
+		"""
+		:param            best_model_path: Path at which to save the model with the best validation loss
+		:param          latest_model_path: Path at which to save the latest model
+		:param callable           save_fn: A function with signature save_fn(path_prefix, tf.Session) -> actual_path
+		:param int       epochs_completed: Epochs of training already completed
+		:param int             max_epochs: Total epochs to complete
+		:param float      best_valid_cost: Best validation loss observed thus far
+		:param int          stalled_steps: The number of consecutive stalled validation steps
+		:param int      max_stalled_steps: The maximum number of stalled steps before stopping training early
+		"""
+
+		if not callable(save_fn):
+			raise ValueError("save_fn must be callable.")
+		self._save_fn  = save_fn
 		self._best_model_path = best_model_path
 		self._latest_model_path = latest_model_path
 		self._epochs_completed = epochs_completed
@@ -76,18 +90,19 @@ class Trainer(object):
 		self._stalled_steps = stalled_steps
 		self._max_stalled_steps = max_stalled_steps
 		self._record = best_valid_cost
-		self._saver = saver if saver is not None else tf.train.Saver()
+
+
 		
 	def save_latest(self, sess, verbose=True):
-		if verbose: print("{}/{} epochs completed, saving model to {}".format(self.epochs_completed, self.max_epochs, self._latest_model_path))
-		self._saver.save(sess, self._latest_model_path)	
+		path = self.save_fn(self._latest_model_path, sess)
+		if verbose: print("{}/{} epochs completed, saved model to {}".format(self.epochs_completed, self.max_epochs, path))
 
 	def check_validation_loss(self, sess, validation_cost):
 		if not( validation_cost >= self._record ):
 			self._stalled_steps = 0
 			self._record = validation_cost
-			self._saver.save(sess, self._best_model_path)
-			print("New record for validation cost--saved to {}".format(self._best_model_path))
+			path = self.save_fn(self._best_model_path, sess)
+			print("New record for validation cost--saved model to {}".format(path))
 		else:
 			self._stalled_steps += 1
 			print("No new record for validation cost--stalled for {}/{} steps".format(self._stalled_steps, self._max_stalled_steps))
@@ -96,16 +111,12 @@ class Trainer(object):
 		self._epochs_completed += 1
 
 	@property
-	def saver(self):
-		return self._saver
+	def save_fn(self):
+		return self._save_fn
 
 	@property
 	def finished(self):
 		return (self.epochs_completed >= self.max_epochs) or (self.stalled_steps >= self.max_stalled_steps)
-
-	@property
-	def saver(self):
-		return self._saver
 
 	@property
 	def epochs_completed(self):
@@ -186,6 +197,8 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 				tot_train_loss = 0
 				train_start_time = time.time()
 
+			break
+
 
 
 		trainer.inc_epochs_completed()
@@ -206,6 +219,8 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 				batch_tokens = num_tokens(feed_dict)
 				tot_valid_tokens += batch_tokens
 				tot_valid_loss += batch_tokens*loss
+
+				break
 
 
 			duration = time.time() - valid_start_time
