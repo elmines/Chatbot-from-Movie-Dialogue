@@ -101,6 +101,7 @@ class Experiment(object):
 						valid_answers_int=self.valid_answers_int
 					)
 
+		self.restore_path = restore_path
 		if self.exp_state != ExpState.QUERY:
 			#Used to make unique directories, not to identify when a model is saved
 			time_string = time.strftime("%b%d_%H:%M:%S")
@@ -111,14 +112,20 @@ class Experiment(object):
 			sys.stderr.write("Writing all new model files to {}\n".format(self.checkpoint_dir))
 
 
-		if self.exp_state != ExpState.NEW and restore_path is None:
+		if self.exp_state != ExpState.NEW and self.restore_path is None:
 			raise ValueError("Must provide a restore_path if not creating a new model.")
-		self.restore_path = restore_path
 
 
 	def train(self):	
 		raise NotImplementedError
 
+
+	@property
+	def train_tag(self):
+		return "-train"
+	@property
+	def infer_tag(self):
+		return "-infer"
 
 	def infer(self, prompts_text, pre_clean=False):
 		"""
@@ -141,8 +148,8 @@ class Experiment(object):
 		pad_int = self.text_data.pad_int
 
 		with tf.Session() as sess:
-			print("Restoring model at {}".format(self.restore_path))
 			self.infer_checkpoint.restore(self.restore_path).assert_consumed().run_restore_ops()
+			print("Restoring model from {}".format(self.restore_path))
 			print(sess.run(tf.report_uninitialized_variables()) , flush=True)
 
 			beam_outputs = test.infer(sess, self.model, prompts_int, self.infer_feeds, self.model.beams, pad_int, batch_size = 32)
@@ -151,10 +158,12 @@ class Experiment(object):
 		int2vocab = self.data.int2vocab
 		lines = []
 		beam_width = len(beam_outputs[0][0][:])
+
+
 		for i in range(len(beam_outputs)):
 			lines.append(cleaned_prompts[i] + "\n")
 			for j in range(beam_width):
-				beam = beam_outputs[i][:][j] #jth beam for the ith sample
+				beam = beam_outputs[i][:,j] #jth beam for the ith sample
 				beam_text = post_clean_seq( " ".join([int2vocab[token] for token in beam if token != pad_int]) )
 				lines.append( "\t{}\n".format(beam_text) )
 
@@ -185,18 +194,19 @@ class VADExp(Experiment):
 		train_dict = var_dict(tf.trainable_variables())
 		self.infer_checkpoint = tf.train.Checkpoint(**train_dict)
 
-		#Used to delete excess checkpoints
+
+		#TODO: Use to delete excess checkpoints
 		checkpoint_paths = []
 
 	def _save_fn(self, path_prefix, sess):
 		(directory, base) = os.path.split(path_prefix)
-		train_prefix = os.path.join(directory, "train-" + base)
-		infer_prefix = os.path.join(directory, "infer-" + base)
+		train_prefix = os.path.join(directory, base + self.train_tag)
+		infer_prefix = os.path.join(directory, base + self.infer_tag)
 
-		self.train_checkpoint.save(train_prefix, sess)
-		print("Saved training graph to {}".format(train_prefix))
-		self.infer_checkpoint.save(infer_prefix, sess)
-		print("Saved inference graph to {}".format(infer_prefix))
+		act_train_prefix = self.train_checkpoint.save(train_prefix, sess)
+		print("Saved training graph to {}".format(act_train_prefix))
+		act_infer_prefix = self.infer_checkpoint.save(infer_prefix, sess)
+		print("Saved inference graph to {}".format(act_infer_prefix))
 
 	def train(self, train_affect=False):
 		if self.exp_state == ExpState.QUERY:
@@ -208,7 +218,7 @@ class VADExp(Experiment):
 
 		with tf.Session() as sess:
 			if self.exp_state == ExpState.CONT_TRAIN:
-				self.train_checkpoint.restore(self.restore_path, sess).assert_consumed().run_restore_ops()
+				self.train_checkpoint.restore(self.restore_path).assert_consumed().run_restore_ops()
 				print("Restored model at {}".format(self.restore_path))
 			else:
 				sess.run(tf.global_variables_initializer())
