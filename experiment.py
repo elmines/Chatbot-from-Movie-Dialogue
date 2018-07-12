@@ -259,7 +259,7 @@ class Aff2VecExp(Experiment):
 		if self.exp_state == ExpState.QUERY:
 			raise ValueError("Tried to train a model in query mode.")
 		xent_epochs = 15
-		trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, max_epochs=xent_epochs, max_stalled_steps=5)
+		trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, self.save_fn, max_epochs=xent_epochs, max_stalled_steps=5)
 
 		with tf.Session() as sess:
 			if self.exp_state == ExpState.CONT_TRAIN:
