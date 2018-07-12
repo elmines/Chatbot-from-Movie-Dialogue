@@ -7,6 +7,9 @@ import time
 #Computation
 import tensorflow as tf
 import numpy as np
+SEED = 1
+np.random.seed(SEED)
+tf.set_random_seed(SEED)
 
 #Local modules
 import loader
@@ -15,13 +18,6 @@ import training
 import tf_collections
 import test
 
-from preprocessing.corpus import pre_clean_seq
-from preprocessing.corpus import post_clean_seq
-
-def write_vars(path, variables):
-	with open(path, "w", encoding="utf-8") as out:
-		for var in variables:
-			out.write("{}\n".format(var))	
 
 def var_dict(variables):
 	"""
@@ -116,10 +112,6 @@ class Experiment(object):
 			raise ValueError("Must provide a restore_path if not creating a new model.")
 
 
-	def train(self):	
-		raise NotImplementedError
-
-
 	@property
 	def train_tag(self):
 		return "-train"
@@ -127,11 +119,17 @@ class Experiment(object):
 	def infer_tag(self):
 		return "-infer"
 
-	def infer(self, prompts_text, pre_clean=False):
+	def train(self):	
+		raise NotImplementedError
+
+	def infer(self, prompts_text):
 		"""
 		:param str       restore_path: TensorFlow checkpoint from which to restore the model
 		:param list(str) prompts_text: Prompts to give the model
-		:param boolean      pre_clean: Whether prompts_text needs to be cleaned
+		:param boolean      pre_clean: Whether prompts_text needs to be cleaned first
+
+		:returns The beams for each response where output[i][j] is the jth beam for the ith prompt
+		:rtype list(list(str))
 
 		Writes the cleaned prompts and their corresponding response(s) to standard output
 		"""
@@ -143,32 +141,38 @@ class Experiment(object):
 		unk_int = self.data.unk_int
 		vocab2int = self.data.vocab2int
 
-		cleaned_prompts = [pre_clean_seq(seq) for seq in prompts_text] if pre_clean else [seq.strip() for seq in prompts_text]
+		cleaned_prompts = [seq.strip() for seq in prompts_text]
 		prompts_int = [ [vocab2int.get(token, unk_int) for token in seq.split()] for seq in cleaned_prompts]
 		pad_int = self.text_data.pad_int
 
 		with tf.Session() as sess:
 			self.infer_checkpoint.restore(self.restore_path).assert_consumed().run_restore_ops()
-			print("Restoring model from {}".format(self.restore_path))
-			print(sess.run(tf.report_uninitialized_variables()) , flush=True)
-
+			sys.stderr.write("Restored model from {}\n".format(self.restore_path))
 			beam_outputs = test.infer(sess, self.model, prompts_int, self.infer_feeds, self.model.beams, pad_int, batch_size = 32)
 
 
+		str_beams = []
 		int2vocab = self.data.int2vocab
-		lines = []
 		beam_width = len(beam_outputs[0][0][:])
-
-
 		for i in range(len(beam_outputs)):
-			lines.append(cleaned_prompts[i] + "\n")
+			beam_set = []
 			for j in range(beam_width):
 				beam = beam_outputs[i][:,j] #jth beam for the ith sample
-				beam_text = post_clean_seq( " ".join([int2vocab[token] for token in beam if token != pad_int]) )
-				lines.append( "\t{}\n".format(beam_text) )
+				beam_text = " ".join([int2vocab[token] for token in beam if token != pad_int])
+				beam_set.append(beam_text)
+			str_beams.append(beam_set)
 
-		for line in lines:
-			sys.stdout.write(line)
+		return str_beams
+
+	def save_fn(self, path_prefix, sess):
+		(directory, base) = os.path.split(path_prefix)
+		train_prefix = os.path.join(directory, base + self.train_tag)
+		infer_prefix = os.path.join(directory, base + self.infer_tag)
+
+		act_train_prefix = self.train_checkpoint.save(train_prefix, sess)
+		print("Saved training graph to {}".format(act_train_prefix))
+		act_infer_prefix = self.infer_checkpoint.save(infer_prefix, sess)
+		print("Saved inference graph to {}".format(act_infer_prefix))
 
 class VADExp(Experiment):
 	def __init__(self, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", vad_vec_path="word_Vecs_VAD.npy", exp_state=ExpState.NEW, restore_path=None):
@@ -195,25 +199,12 @@ class VADExp(Experiment):
 		self.infer_checkpoint = tf.train.Checkpoint(**train_dict)
 
 
-		#TODO: Use to delete excess checkpoints
-		checkpoint_paths = []
-
-	def _save_fn(self, path_prefix, sess):
-		(directory, base) = os.path.split(path_prefix)
-		train_prefix = os.path.join(directory, base + self.train_tag)
-		infer_prefix = os.path.join(directory, base + self.infer_tag)
-
-		act_train_prefix = self.train_checkpoint.save(train_prefix, sess)
-		print("Saved training graph to {}".format(act_train_prefix))
-		act_infer_prefix = self.infer_checkpoint.save(infer_prefix, sess)
-		print("Saved inference graph to {}".format(act_infer_prefix))
-
 	def train(self, train_affect=False):
 		if self.exp_state == ExpState.QUERY:
 			raise ValueError("Tried to train a model in query mode.")
 		xent_epochs = 15 
 
-		save_fn = self._save_fn
+		save_fn = self.save_fn
 		trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, save_fn, max_epochs=xent_epochs, max_stalled_steps=5)
 
 		with tf.Session() as sess:
@@ -256,6 +247,14 @@ class Aff2VecExp(Experiment):
 		self.train_feeds = {self.model.keep_prob: 0.75}
 		self.infer_feeds = {self.model.keep_prob: 1}
 
+		#Set variables to be saved
+		self.train_checkpoint = None
+		if self.exp_state != ExpState.QUERY:
+			global_dict = var_dict( tf.global_variables() )
+			self.train_checkpoint = tf.train.Checkpoint(**global_dict)
+		train_dict = var_dict(tf.trainable_variables())
+		self.infer_checkpoint = tf.train.Checkpoint(**train_dict)
+
 	def train(self):
 		if self.exp_state == ExpState.QUERY:
 			raise ValueError("Tried to train a model in query mode.")
@@ -263,6 +262,10 @@ class Aff2VecExp(Experiment):
 		trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, max_epochs=xent_epochs, max_stalled_steps=5)
 
 		with tf.Session() as sess:
-			sess.run(tf.global_variables_initializer())
+			if self.exp_state == ExpState.CONT_TRAIN:
+				self.train_checkpoint.restore(self.restore_path).assert_consumed().run_restore_ops()
+				print("Restored model at {}".format(self.restore_path))
+			else:
+				sess.run(tf.global_variables_initializer())
 			training.training_loop(sess, self.model, trainer, self.datasets, self.text_data, self.train_feeds, self.infer_feeds, min_epochs_before_validation=1)
 
