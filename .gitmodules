@@ -1,3 +1,6 @@
 [submodule "preprocessing"]
 	path = preprocessing
 	url = https://github.com/elmines/preprocessing.git
+[submodule "analysis"]
+	path = analysis
+	url = https://github.com/elmines/EmotChatbotAnalyze.git
