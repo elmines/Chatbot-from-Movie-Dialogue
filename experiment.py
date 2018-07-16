@@ -17,6 +17,7 @@ import models
 import training
 import tf_collections
 import test
+import config
 
 
 def var_dict(variables):
@@ -61,10 +62,12 @@ class ExpState(Enum):
 
 class Experiment(object):
 
-	def __init__(self, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", exp_state=ExpState.NEW, restore_path=None):
+	def __init__(self, config_path=None, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", exp_state=ExpState.NEW, restore_path=None):
 		"""
 		:param str restore_path: TensorFlow checkpoint from which to restore a model (only applicable if exp_state != ExpState.NEW)
 		"""
+
+		self.config = config.Config(config_path)
 
 		self.exp_state = exp_state
 
@@ -175,8 +178,8 @@ class Experiment(object):
 		print("Saved inference graph to {}".format(act_infer_prefix))
 
 class VADExp(Experiment):
-	def __init__(self, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", vad_vec_path="word_Vecs_VAD.npy", exp_state=ExpState.NEW, restore_path=None):
-		Experiment.__init__(self, regenerate, data_dir, w2vec_path, exp_state, restore_path)
+	def __init__(self, config_path=None, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", vad_vec_path="word_Vecs_VAD.npy", exp_state=ExpState.NEW, restore_path=None):
+		Experiment.__init__(self, config_path, regenerate, data_dir, w2vec_path, exp_state, restore_path)
 
 		full_embeddings = self.data.load_vad(vad_vec_path, regenerate=regenerate)
 		self.wordVecsWithMeta = append_meta(full_embeddings, self.metatoken)
@@ -185,7 +188,8 @@ class VADExp(Experiment):
 		tf.reset_default_graph()
 		embeddings_var = tf.constant(self.wordVecsWithMeta, name="embeddings")
 		output_layer = tf.layers.Dense(len(self.wordVecsWithMeta),bias_initializer=tf.zeros_initializer(),activation=tf.nn.relu)
-		self.model = models.VADAppended(embeddings_var, self.go_token, self.eos_token, output_layer=output_layer, affect_strength = 0.2, beam_width=10, infer=infer)
+
+		self.model = models.VADAppended(embeddings_var, self.go_token, self.eos_token, self.config, output_layer=output_layer, affect_strength = 0.2, beam_width=10, infer=infer)
 
 		self.train_feeds = {self.model.keep_prob: 0.75}
 		self.infer_feeds = {self.model.keep_prob: 1}
@@ -229,8 +233,8 @@ class VADExp(Experiment):
 
 
 class Aff2VecExp(Experiment):
-	def __init__(self, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", exp_state=ExpState.NEW, counterfit=True, restore_path=None):
-		Experiment.__init__(self, regenerate, data_dir, w2vec_path, exp_state, restore_path)
+	def __init__(self, config_path=None, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", exp_state=ExpState.NEW, counterfit=True, restore_path=None):
+		Experiment.__init__(self, config_path, regenerate, data_dir, w2vec_path, exp_state, restore_path)
 
 		if counterfit:
 			full_embeddings = self.data.load_counterfit("word_Vecs_counterfit_affect.npy", "./w2v_counterfit_append_affect.bin", regenerate=regenerate)
@@ -242,7 +246,7 @@ class Aff2VecExp(Experiment):
 		tf.reset_default_graph()
 		embeddings_var = tf.constant(self.wordVecsWithMeta, name="embeddings")
 		output_layer = tf.layers.Dense(len(self.wordVecsWithMeta),bias_initializer=tf.zeros_initializer(),activation=tf.nn.relu)
-		self.model = models.Aff2Vec(embeddings_var, embeddings_var, self.go_token, self.eos_token, output_layer=output_layer, beam_width=10, infer=infer)
+		self.model = models.Aff2Vec(embeddings_var, embeddings_var, self.go_token, self.eos_token, self.config, output_layer=output_layer, beam_width=10, infer=infer)
 
 		self.train_feeds = {self.model.keep_prob: 0.75}
 		self.infer_feeds = {self.model.keep_prob: 1}

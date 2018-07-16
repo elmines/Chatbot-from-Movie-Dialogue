@@ -9,6 +9,7 @@ import pandas as pd
 
 #Local modules
 import experiment
+import config
 
 def create_parser():
 	parser = argparse.ArgumentParser(description="Train an affective neural dialog generation model."
@@ -26,6 +27,7 @@ def create_parser():
 	parser.add_argument("--embeddings-only", action="store_true", help="Just generate the embeddings and exit. You may specify multiple models")
 	parser.add_argument("--regen", "--regen-embeddings", action="store_true", help="Regenerate the model's embeddings prior to training")
 
+	parser.add_argument("--config", "-c", metavar="config.yml", help="YAML configuration file for setting experiment and model hyperparameters")
 
 	return parser
 
@@ -66,11 +68,11 @@ def main(args):
 
 
 	if args.vad:
-		exp = experiment.VADExp(regenerate, exp_state=exp_state, restore_path=args.model)
+		exp = experiment.VADExp(args.config, regenerate, exp_state=exp_state, restore_path=args.model)
 	elif args.counter:
-		exp = experiment.Aff2VecExp(regenerate, counterfit=True, exp_state=exp_state, restore_path=args.model)
+		exp = experiment.Aff2VecExp(args.config, regenerate, counterfit=True, exp_state=exp_state, restore_path=args.model)
 	elif args.retro:
-		exp = experiment.Aff2VecExp(regenerate, counterfit=False, exp_state=exp_state, restore_path=args.model)
+		exp = experiment.Aff2VecExp(args.config, regenerate, counterfit=False, exp_state=exp_state, restore_path=args.model)
 	else:
 		parser.print_help()
 		sys.exit(0)

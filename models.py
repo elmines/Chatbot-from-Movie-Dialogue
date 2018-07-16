@@ -107,7 +107,7 @@ class Seq2Seq(object):
 	Abstract class representing standard sequence-to-sequence model
 	"""
 
-	def __init__(self, enc_embeddings, dec_embeddings, go_token, eos_token, num_layers=1, rnn_size=1024, attn_size=256, output_layer=None, learning_rate=0.0001, beam_width=1, infer=False):
+	def __init__(self, enc_embeddings, dec_embeddings, go_token, eos_token, config, output_layer=None, learning_rate=0.0001, beam_width=1, infer=False):
 		"""
 		:param enc_embeddings: Word embeddings for encoder
 		:param dec_embeddings: Word embeddings for decoder
@@ -134,8 +134,9 @@ class Seq2Seq(object):
 		self._dec_embed_input = tf.nn.embedding_lookup(dec_embeddings, _process_decoding_input(self._targets, go_token))
 	
 	
-		forward_cell = _multi_dropout_cell(rnn_size, self._keep_prob, num_layers)
-		backward_cell = _multi_dropout_cell(rnn_size, self._keep_prob, num_layers)
+		forward_cell = _multi_dropout_cell(config.rnn_size, self._keep_prob, config.num_layers)
+		backward_cell = _multi_dropout_cell(config.rnn_size, self._keep_prob, config.num_layers)
+
 		enc_outputs, enc_states =  tf.nn.bidirectional_dynamic_rnn(cell_fw = forward_cell, cell_bw = backward_cell,
 										sequence_length = self._source_lengths,
 										inputs = self._enc_embed_input, dtype=tf.float32)
@@ -143,11 +144,11 @@ class Seq2Seq(object):
 		init_dec_state = enc_states[0] 
 	
 	
-		dec_cell = _multi_dropout_cell(rnn_size, self._keep_prob, num_layers)
+		dec_cell = _multi_dropout_cell(config.rnn_size, self._keep_prob, config.num_layers)
 		self._beam_width = beam_width
 		self._infer = infer
 		decoder_output = _beam_search_decoder(init_dec_state, concatenated_enc_output, self._dec_embed_input, dec_embeddings,
-	                        dec_cell, attn_size, output_layer, self._source_lengths, self._target_lengths, go_token, eos_token, self._beam_width, infer)
+	                        dec_cell, config.attn_size, output_layer, self._source_lengths, self._target_lengths, go_token, eos_token, self._beam_width, infer)
 		if infer:
 			self._beams = decoder_output
 			self._train_logits = None
@@ -259,7 +260,7 @@ class Aff2Vec(Seq2Seq):
 
 class VADAppended(Seq2Seq):
 
-	def __init__(self, full_embeddings, go_token, eos_token,
+	def __init__(self, full_embeddings, go_token, eos_token, config,
                 num_layers=1, rnn_size=1024, attn_size=256, output_layer=None,
 		keep_prob = 1, learning_rate=0.0001, beam_width=1, infer=False,
  		affect_strength=0.5):
@@ -267,8 +268,8 @@ class VADAppended(Seq2Seq):
 		affect_strength - hyperparameter in the range [0.0, 1.0)
 		"""
 		
-		Seq2Seq.__init__(self, full_embeddings, full_embeddings,go_token, eos_token,
-				num_layers=num_layers,rnn_size=rnn_size,attn_size=attn_size,output_layer=output_layer, learning_rate=learning_rate, beam_width=beam_width, infer=infer)
+		Seq2Seq.__init__(self, full_embeddings, full_embeddings, go_token, eos_token, config,
+				output_layer=output_layer, learning_rate=learning_rate, beam_width=beam_width, infer=infer)
 
 		#This is a variable, rather than a computation, so it should be kept if we ever, say, want to train a model, query, later come back and train more . . .
 		self._train_affect = tf.placeholder_with_default(False, shape=())
