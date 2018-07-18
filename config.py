@@ -8,17 +8,19 @@ class Setting(namedtuple("Setting", ["name", "type_fn", "default"])):
 	"""
 	str name: Name of the setting
 	callable type_fn: Function that transforms the YAML value to the desired type/object
-	callable default: Supplier function that returns a default value when called
+	callable default: Supplier function that takes no parameters and returns a default value
 	"""
 	pass
 
 class Config(object):
 
 	_settings = []
-	_settings.append(Setting("num_layers",      int, lambda: 1))
-	_settings.append(Setting("rnn_size",        int, lambda: 1024))
-	_settings.append(Setting("attn_size",       int, lambda: 256))
-	#_settings.append(Setting("learning_rate", float, lambda: 0.0001))
+	_settings.append(Setting("num_layers",          int, lambda: 1))
+	_settings.append(Setting("rnn_size",            int, lambda: 1024))
+	_settings.append(Setting("attn_size",           int, lambda: 256))
+	_settings.append(Setting("learning_rate",     float, lambda: 0.0001))
+	_settings.append(Setting("beam_width",          int, lambda: 1))
+	_settings.append(Setting("gradient_clip_value", float, lambda: 5.0))
 
 	_setting_dict = {setting.name:setting for setting in _settings}
 

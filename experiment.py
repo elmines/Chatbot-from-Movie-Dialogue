@@ -189,7 +189,7 @@ class VADExp(Experiment):
 		embeddings_var = tf.constant(self.wordVecsWithMeta, name="embeddings")
 		output_layer = tf.layers.Dense(len(self.wordVecsWithMeta),bias_initializer=tf.zeros_initializer(),activation=tf.nn.relu)
 
-		self.model = models.VADAppended(embeddings_var, self.go_token, self.eos_token, self.config, output_layer=output_layer, affect_strength = 0.2, beam_width=10, infer=infer)
+		self.model = models.VADAppended(embeddings_var, self.go_token, self.eos_token, self.config, output_layer=output_layer, affect_strength = 0.2, infer=infer)
 
 		self.train_feeds = {self.model.keep_prob: 0.75}
 		self.infer_feeds = {self.model.keep_prob: 1}
@@ -246,7 +246,7 @@ class Aff2VecExp(Experiment):
 		tf.reset_default_graph()
 		embeddings_var = tf.constant(self.wordVecsWithMeta, name="embeddings")
 		output_layer = tf.layers.Dense(len(self.wordVecsWithMeta),bias_initializer=tf.zeros_initializer(),activation=tf.nn.relu)
-		self.model = models.Aff2Vec(embeddings_var, embeddings_var, self.go_token, self.eos_token, self.config, output_layer=output_layer, beam_width=10, infer=infer)
+		self.model = models.Aff2Vec(enc_embeddings=embeddings_var, dec_embeddings=embeddings_var, go_token=self.go_token, eos_token=self.eos_token, config=self.config, output_layer=output_layer, infer=infer)
 
 		self.train_feeds = {self.model.keep_prob: 0.75}
 		self.infer_feeds = {self.model.keep_prob: 1}
