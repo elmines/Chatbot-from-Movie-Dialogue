@@ -68,11 +68,10 @@ class Trainer(object):
 	"""
 	Class describing the state of a models.Seq2Seq's training
 	"""
-	def __init__(self, best_model_path, latest_model_path, save_fn, epochs_completed=0, max_epochs=50, best_valid_cost = float("inf"), stalled_steps = 0, max_stalled_steps=float("inf")):
+	def __init__(self, save_fn, epochs_completed=0, max_epochs=50, best_valid_cost = float("inf"), stalled_steps = 0, max_stalled_steps=float("inf")):
 		"""
-		:param            best_model_path: Path at which to save the model with the best validation loss
 		:param          latest_model_path: Path at which to save the latest model
-		:param callable           save_fn: A function with signature save_fn(path_prefix, tf.Session) -> actual_path
+		:param callable           save_fn: A function with signature save_fn(tf.Session)
 		:param int       epochs_completed: Epochs of training already completed
 		:param int             max_epochs: Total epochs to complete
 		:param float      best_valid_cost: Best validation loss observed thus far
@@ -83,8 +82,6 @@ class Trainer(object):
 		if not callable(save_fn):
 			raise ValueError("save_fn must be callable.")
 		self._save_fn  = save_fn
-		self._best_model_path = best_model_path
-		self._latest_model_path = latest_model_path
 		self._epochs_completed = epochs_completed
 		self._max_epochs = max_epochs
 		self._stalled_steps = stalled_steps
@@ -94,7 +91,7 @@ class Trainer(object):
 
 		
 	def save_latest(self, sess):
-		self.save_fn(self._latest_model_path, sess)
+		self.save_fn(sess)
 		print("{}/{} epochs completed".format(self.epochs_completed, self.max_epochs))
 
 	def check_validation_loss(self, sess, validation_cost):
@@ -197,6 +194,8 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 				tot_train_loss = 0
 				train_start_time = time.time()
 
+			break
+
 		trainer.inc_epochs_completed()
 		trainer.save_latest(sess)
 
@@ -216,6 +215,8 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 				tot_valid_tokens += batch_tokens
 				tot_valid_loss += batch_tokens*loss
 
+				break
+
 			duration = time.time() - valid_start_time
 			avg_valid_loss = tot_valid_loss / tot_valid_tokens
 			 
@@ -223,3 +224,4 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 			print("Loss-per-Token = {}".format(avg_valid_loss))
 			trainer.check_validation_loss(sess, avg_valid_loss)
 			valid_check_no += 1
+		break

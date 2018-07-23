@@ -54,25 +54,31 @@ def gen_embeddings(vad=True, counter=True, retro=True, data_dir="corpora/", w2ve
 	if counter: data_loader.load_counterfit(counterfit_path, "./w2v_counterfit_append_affect.bin", regenerate=True)
 	if retro:   data_loader.load_retrofit(retrofit_path, "./w2v_retrofit_append_affect.bin", regenerate=True)
 
-class ExpState(Enum):
-	NEW = 1
-	CONT_TRAIN = 2
-	QUERY = 3
-
 
 class Experiment(object):
 
-	def __init__(self, config_path=None, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", exp_state=ExpState.NEW, restore_path=None):
+	def __init__(self, config_obj, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", infer=False):
 		"""
-		:param str restore_path: TensorFlow checkpoint from which to restore a model (only applicable if exp_state != ExpState.NEW)
 		"""
 
-		self.config = config.Config(config_path)
+		self.config = config_obj
+		self.inference = infer
 
-		self.exp_state = exp_state
-
-		if self.exp_state != ExpState.NEW:
+		self.model_load = self.config.model_load
+		if self.inference:
+			if self.model_load is None:
+				raise ValueError("Must specify model_load in configuration when doing inference")
 			regenerate = False
+		else:
+			self.train_save = self.config.train_save
+			self.infer_save = self.config.infer_save
+			self.train_checkpoint = None #To be defined in subclasses
+			self.infer_checkpoint = None
+
+			if self.model_load is not None:
+				regenerate = False
+				
+
 		self.data = loader.Loader(data_dir, w2vec_path, regenerate=regenerate)
 		self.vocab2int = self.data.vocab2int
 		self.int2vocab = self.data.int2vocab
@@ -100,20 +106,6 @@ class Experiment(object):
 						valid_answers_int=self.valid_answers_int
 					)
 
-		self.restore_path = restore_path
-		if self.exp_state != ExpState.QUERY:
-			#Used to make unique directories, not to identify when a model is saved
-			time_string = time.strftime("%b%d_%H:%M:%S")
-			self.checkpoint_dir = os.path.join("checkpoints", time_string)
-			if not os.path.exists(self.checkpoint_dir): os.makedirs(self.checkpoint_dir)
-			self.checkpoint_best = str(self.checkpoint_dir) + "/" + "best_model.ckpt" 
-			self.checkpoint_latest = str(self.checkpoint_dir) + "/" + "latest_model.ckpt"
-			sys.stderr.write("Writing all new model files to {}\n".format(self.checkpoint_dir))
-
-
-		if self.exp_state != ExpState.NEW and self.restore_path is None:
-			raise ValueError("Must provide a restore_path if not creating a new model.")
-
 
 	@property
 	def train_tag(self):
@@ -137,8 +129,8 @@ class Experiment(object):
 		Writes the cleaned prompts and their corresponding response(s) to standard output
 		"""
 
-		if self.exp_state != ExpState.QUERY:
-			raise ValueError("Can only call infer if exp_state == ExpState.QUERY")
+		if not self.inference:
+			raise ValueError("Can only call infer() if model is constructed in inference mode")
 
 
 		unk_int = self.data.unk_int
@@ -149,7 +141,7 @@ class Experiment(object):
 		pad_int = self.text_data.pad_int
 
 		with tf.Session() as sess:
-			self.infer_checkpoint.restore(self.restore_path).assert_consumed().run_restore_ops()
+			self.infer_checkpoint.restore(self.model_load).assert_consumed().run_restore_ops()
 			sys.stderr.write("Restored model from {}\n".format(self.restore_path))
 			beam_outputs = test.infer(sess, self.model, prompts_int, self.infer_feeds, self.model.beams, pad_int, batch_size = 32)
 
@@ -167,36 +159,31 @@ class Experiment(object):
 
 		return str_beams
 
-	def save_fn(self, path_prefix, sess):
-		(directory, base) = os.path.split(path_prefix)
-		train_prefix = os.path.join(directory, base + self.train_tag)
-		infer_prefix = os.path.join(directory, base + self.infer_tag)
-
-		act_train_prefix = self.train_checkpoint.save(train_prefix, sess)
+	def save_fn(self, sess):
+		act_train_prefix = self.train_checkpoint.save(self.train_save, sess)
 		print("Saved training graph to {}".format(act_train_prefix))
-		act_infer_prefix = self.infer_checkpoint.save(infer_prefix, sess)
+		act_infer_prefix = self.infer_checkpoint.save(self.infer_save, sess)
 		print("Saved inference graph to {}".format(act_infer_prefix))
 
 class VADExp(Experiment):
-	def __init__(self, config_path=None, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", vad_vec_path="word_Vecs_VAD.npy", exp_state=ExpState.NEW, restore_path=None):
-		Experiment.__init__(self, config_path, regenerate, data_dir, w2vec_path, exp_state, restore_path)
+	def __init__(self, config_obj=None, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", vad_vec_path="word_Vecs_VAD.npy", infer=False):
+		Experiment.__init__(self, config_obj, regenerate, data_dir, w2vec_path, infer)
 
 		full_embeddings = self.data.load_vad(vad_vec_path, regenerate=regenerate)
 		self.wordVecsWithMeta = append_meta(full_embeddings, self.metatoken)
 		
-		infer = self.exp_state == ExpState.QUERY
 		tf.reset_default_graph()
 		embeddings_var = tf.constant(self.wordVecsWithMeta, name="embeddings")
 		output_layer = tf.layers.Dense(len(self.wordVecsWithMeta),bias_initializer=tf.zeros_initializer(),activation=tf.nn.relu)
 
-		self.model = models.VADAppended(embeddings_var, self.go_token, self.eos_token, self.config, output_layer=output_layer, affect_strength = 0.2, infer=infer)
+		self.model = models.VADAppended(embeddings_var, self.go_token, self.eos_token, self.config, output_layer=output_layer, affect_strength = 0.2, infer=self.inference)
 
 		self.train_feeds = {self.model.keep_prob: 0.75}
 		self.infer_feeds = {self.model.keep_prob: 1}
 
 		#Set variables to be saved
 		self.train_checkpoint = None
-		if self.exp_state != ExpState.QUERY:
+		if not self.inference:
 			global_dict = var_dict( tf.global_variables() )
 			self.train_checkpoint = tf.train.Checkpoint(**global_dict)
 		train_dict = var_dict(tf.trainable_variables())
@@ -204,20 +191,19 @@ class VADExp(Experiment):
 
 
 	def train(self, train_affect=False):
-		if self.exp_state == ExpState.QUERY:
-			raise ValueError("Tried to train a model in query mode.")
+		if self.inference:
+			raise ValueError("Tried to train a model in inference mode.")
 		xent_epochs = 15 
 
-		save_fn = self.save_fn
-		trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, save_fn, max_epochs=xent_epochs, max_stalled_steps=5)
+		trainer = training.Trainer(self.save_fn, max_epochs=xent_epochs, max_stalled_steps=5)
 
 		with tf.Session() as sess:
-			if self.exp_state == ExpState.CONT_TRAIN:
-				self.train_checkpoint.restore(self.restore_path).assert_consumed().run_restore_ops()
-				print("Restored model at {}".format(self.restore_path))
+			if self.model_load:
+				self.train_checkpoint.restore(self.model_load).assert_consumed().run_restore_ops()
+				print("Restored model at {}".format(self.model_load))
 			else:
 				sess.run(tf.global_variables_initializer())
-			training.training_loop(sess, self.model, trainer, self.datasets, self.text_data, self.train_feeds, self.infer_feeds, min_epochs_before_validation=1)
+			training.training_loop(sess, self.model, trainer, self.datasets, self.text_data, self.train_feeds, self.infer_feeds, min_epochs_before_validation=1, train_batch_size=1, valid_batch_size=1)
 
 			if train_affect:
 				affect_epochs = (trainer.epochs_completed // 4) + 1*(trainer.epochs_completed < 4)
@@ -233,8 +219,8 @@ class VADExp(Experiment):
 
 
 class Aff2VecExp(Experiment):
-	def __init__(self, config_path=None, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", exp_state=ExpState.NEW, counterfit=True, restore_path=None):
-		Experiment.__init__(self, config_path, regenerate, data_dir, w2vec_path, exp_state, restore_path)
+	def __init__(self, config_obj=None, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", infer=False):
+		Experiment.__init__(self, config_obj, regenerate, data_dir, w2vec_path, exp_state, infer)
 
 		if counterfit:
 			full_embeddings = self.data.load_counterfit("word_Vecs_counterfit_affect.npy", "./w2v_counterfit_append_affect.bin", regenerate=regenerate)
@@ -242,33 +228,32 @@ class Aff2VecExp(Experiment):
 			full_embeddings = self.data.load_retrofit("word_Vecs_retrofit_affect.npy", "./w2v_retrofit_append_affect.bin", regenerate=regenerate)
 		self.wordVecsWithMeta = append_meta(full_embeddings, self.metatoken)
 		
-		infer = self.exp_state == ExpState.QUERY
 		tf.reset_default_graph()
 		embeddings_var = tf.constant(self.wordVecsWithMeta, name="embeddings")
 		output_layer = tf.layers.Dense(len(self.wordVecsWithMeta),bias_initializer=tf.zeros_initializer(),activation=tf.nn.relu)
-		self.model = models.Aff2Vec(enc_embeddings=embeddings_var, dec_embeddings=embeddings_var, go_token=self.go_token, eos_token=self.eos_token, config=self.config, output_layer=output_layer, infer=infer)
+		self.model = models.Aff2Vec(enc_embeddings=embeddings_var, dec_embeddings=embeddings_var, go_token=self.go_token, eos_token=self.eos_token, config=self.config, output_layer=output_layer, infer=self.inference)
 
 		self.train_feeds = {self.model.keep_prob: 0.75}
 		self.infer_feeds = {self.model.keep_prob: 1}
 
 		#Set variables to be saved
 		self.train_checkpoint = None
-		if self.exp_state != ExpState.QUERY:
+		if self.inference:
 			global_dict = var_dict( tf.global_variables() )
 			self.train_checkpoint = tf.train.Checkpoint(**global_dict)
 		train_dict = var_dict(tf.trainable_variables())
 		self.infer_checkpoint = tf.train.Checkpoint(**train_dict)
 
 	def train(self):
-		if self.exp_state == ExpState.QUERY:
-			raise ValueError("Tried to train a model in query mode.")
+		if self.inference:
+			raise ValueError("Tried to train a model in inference mode.")
 		xent_epochs = 15
-		trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, self.save_fn, max_epochs=xent_epochs, max_stalled_steps=5)
+		trainer = training.Trainer(self.save_fn, max_epochs=xent_epochs, max_stalled_steps=5)
 
 		with tf.Session() as sess:
-			if self.exp_state == ExpState.CONT_TRAIN:
-				self.train_checkpoint.restore(self.restore_path).assert_consumed().run_restore_ops()
-				print("Restored model at {}".format(self.restore_path))
+			if self.model_load:
+				self.train_checkpoint.restore(self.model_load).assert_consumed().run_restore_ops()
+				print("Restored model at {}".format(self.model_load))
 			else:
 				sess.run(tf.global_variables_initializer())
 			training.training_loop(sess, self.model, trainer, self.datasets, self.text_data, self.train_feeds, self.infer_feeds, min_epochs_before_validation=1)
