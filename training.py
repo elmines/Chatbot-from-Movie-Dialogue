@@ -194,7 +194,6 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 				tot_train_loss = 0
 				train_start_time = time.time()
 
-			break
 
 		trainer.inc_epochs_completed()
 		trainer.save_latest(sess)
@@ -215,7 +214,6 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 				tot_valid_tokens += batch_tokens
 				tot_valid_loss += batch_tokens*loss
 
-				break
 
 			duration = time.time() - valid_start_time
 			avg_valid_loss = tot_valid_loss / tot_valid_tokens
@@ -224,4 +222,3 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 			print("Loss-per-Token = {}".format(avg_valid_loss))
 			trainer.check_validation_loss(sess, avg_valid_loss)
 			valid_check_no += 1
-		break
