@@ -46,11 +46,14 @@ def _maybe_abspath(path):
 	"""
 	return os.path.abspath(path) if path is not None else path
 
+def _maybe_str(candidate):
+	return str(candidate) if candidate is not None else candidate
 
 
 class Config(object):
 
 	def __init__(self, config_file=None):	
+		self._config_file = config_file
 		self._define_settings()
 		self.__setattr__ = self._setattr_base #Override __setattr__ after assigning _setting_dict
 
@@ -86,7 +89,7 @@ class Config(object):
 		def default_embedding():
 			embeddings_dict = {experiment.VADExp : "word_Vecs_VAD.npy", experiment.DistrExp : "word_Vecs_retrofit_affect.npy"}
 			embeddings_path = embeddings_dict[self.arch]
-			warnings.warn("You did not specify the `embeddings` parameter. We are providing a default of {} for"
+			warnings.warn("You did not specify the `embeddings` parameter. We are providing a default of \"{}\" for"
 					" the model {}, but this behavior will be deprecated.".format(embeddings_path, self.arch))
 			return embeddings_path
 
@@ -113,9 +116,10 @@ class Config(object):
 		_settings.append(Setting("data_dir", os.path.abspath,     lambda: os.path.abspath("corpora/")))
 
 		#Inference
-		_settings.append(Setting("infer_prompts", _maybe_abspath, lambda: None))
-		_settings.append(Setting("infer_sheet", _maybe_abspath, lambda: None))
-		_settings.append(Setting("infer_out", os.path.abspath, os.path.join(_timestamp, "out.xlsx")))	
+		_settings.append(Setting("infer_text", _maybe_abspath, lambda: None))
+		_settings.append(Setting("infer_sheet",   _maybe_abspath, lambda: None))
+		_settings.append(Setting("sheet_col",         _maybe_str, lambda: None))
+		_settings.append(Setting("infer_out",    os.path.abspath, lambda: os.path.join(_timestamp, "out.xlsx")))
 
 		self._setting_dict = {setting.name:setting for setting in _settings}
 	
@@ -129,7 +133,7 @@ class Config(object):
 
 		invalid_keys = set(yaml_dict) - set(self._setting_dict)
 		if len(invalid_keys) > 0:
-			raise KeyError("The following settings from {} are invalid: {}".format(config_file, invalid_keys))
+			raise KeyError("The following settings from {} are invalid: {}".format(self._config_file, invalid_keys))
 
 	def _initialize_setting(self, setting, yaml_dict, initialized):
 		"""
