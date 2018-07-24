@@ -1,7 +1,7 @@
 """
 Train a Seq2Seq dialog generation model.
 
-Usage: `python config.yml`
+Usage: `python train.py config.yml`
 """
 
 #Utilities
@@ -49,8 +49,9 @@ def main(config_obj):
 
 	
 if __name__ == "__main__":
-	if len(sys.argv) < 2:
+	if len(sys.argv) != 2:
 		sys.stderr.write("{}\n".format(__doc__))
+		sys.stderr.write("You passed in {} arguments instead of 1.\n".format(len(sys.argv) - 1))
 		sys.exit(0)
 	config_obj = config.Config(sys.argv[1])
 	main(config_obj)
