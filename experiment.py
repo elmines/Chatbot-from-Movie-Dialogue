@@ -15,7 +15,7 @@ import loader
 import models
 import training
 import tf_collections
-import test
+import inference
 import config
 
 
@@ -125,7 +125,7 @@ class BaseExperiment(object):
 		with tf.Session() as sess:
 			self.infer_checkpoint.restore(self.model_load).assert_consumed().run_restore_ops()
 			sys.stderr.write("Restored model from {}\n".format(self.restore_path))
-			beam_outputs = test.infer(sess, self.model, prompts_int, self.infer_feeds, self.model.beams, pad_int, batch_size = 32)
+			beam_outputs = inference.infer(sess, self.model, prompts_int, self.infer_feeds, self.model.beams, pad_int, batch_size = 32)
 
 
 		str_beams = []

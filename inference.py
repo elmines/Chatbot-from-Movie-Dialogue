@@ -2,7 +2,7 @@ import tensorflow as tf
 import time
 import sys
 
-#TODO: Move functions like batch_feeds to a module separate from training and query
+#TODO: Move functions like batch_feeds to a module separate from training and inference
 from training import batch_feeds 
 from training import merge_dicts
 
