@@ -57,11 +57,11 @@ def batch_feeds(data_placeholders, questions_int, answers_int, batch_size, pad_t
 		answers_batch = answers_int[start_i:start_i + batch_size]
 		yield single_batch(data_placeholders, questions_batch, answers_batch, pad_token)
 
-	remainder = len(questions_int) % batch_size
-	questions_batch = questions_int[-remainder:]
-	answers_batch = questions_int[-remainder:]
-
-	yield single_batch(data_placeholders, questions_batch, answers_batch, pad_token)
+	if batch_size > 1:
+		remainder = len(questions_int) % batch_size
+		questions_batch = questions_int[-remainder:]
+		answers_batch = questions_int[-remainder:]
+		yield single_batch(data_placeholders, questions_batch, answers_batch, pad_token)
 	
 #TODO: Add support for logging
 class Trainer(object):
