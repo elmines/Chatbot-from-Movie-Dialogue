@@ -1,10 +1,13 @@
 """
 Module for customizing model and experiment hyperparameters
 """
-import yaml
-from collections import namedtuple
-import time
 import os
+import time
+from collections import namedtuple
+import yaml
+
+#Local modules
+import experiment
 
 class Setting(namedtuple("Setting", ["name", "type_fn", "default"])):
 	"""
@@ -20,6 +23,16 @@ def _maybe_abspath(path):
 	:returns An absolute path if path isn't None, otherwise None
 	"""
 	return os.path.abspath(path) if path is not None else path
+
+def arch_convert(arch_str):
+	"""
+	:param str arch_str: String representing the model to be constructed
+
+	:returns Constructor for an experiment.BaseExperiment object
+	:rtype experiment.BaseExperiment
+	"""
+
+	
 
 
 class Config(object):
@@ -38,7 +51,6 @@ class Config(object):
 		consumed_keys = set()
 		for setting in self._setting_dict.values():
 			name = setting.name
-			print(name)
 			self.__setattr__(name, yaml_dict.get(name, setting.default()))
 			if name in yaml_dict:
 				consumed_keys.add(name)
@@ -66,17 +78,29 @@ class Config(object):
 		_timestamp = time.strftime("%b%d_%H:%M:%S")
 
 		_settings = []
+
+		arch_dict = {"vad": experiment.VADExp, "distributed": experiment.DistrExp}
+
+		#Hyperparameters
 		_settings.append(Setting("num_layers",          int,             lambda: 1))
 		_settings.append(Setting("rnn_size",            int,             lambda: 1024))
 		_settings.append(Setting("attn_size",           int,             lambda: 256))
 		_settings.append(Setting("learning_rate",       float,           lambda: 0.0001))
 		_settings.append(Setting("beam_width",          int,             lambda: 1))
 		_settings.append(Setting("gradient_clip_value", float,           lambda: 5.0))
+
+
+		#Model loading and saving
 		_settings.append(Setting("train_save",          os.path.abspath, lambda: os.path.join(_timestamp, "train_model.ckpt")))
 		_settings.append(Setting("infer_save",          os.path.abspath, lambda: os.path.join(_timestamp, "infer_model.ckpt")))
-
 		_settings.append(Setting("model_load",          _maybe_abspath,  lambda: None))
 
+		#Architecture
+		_settings.append(Setting("arch", arch_dict.get, lambda: "distributed"))
+		_settings.append(Setting("embeddings", os.path.abspath, lambda: "word_Vecs_retrofit_affect.npy"))
+
+		#Data files
+		_settings.append(Setting("data_dir", os.path.abspath,     lambda: os.path.abspath("corpora/")))
 		_settings.append(Setting("infer_prompts", _maybe_abspath, lambda: None))
 	
 		_setting_dict = {setting.name:setting for setting in _settings}

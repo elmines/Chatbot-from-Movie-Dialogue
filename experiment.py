@@ -1,8 +1,7 @@
 #Utilities
 import sys
 import os
-from enum import Enum
-import time
+import warnings
 
 #Computation
 import tensorflow as tf
@@ -48,16 +47,10 @@ def append_meta(wordVecs, verify_index=None):
 def append_eos(answers_int, eos_int):
 	return [sequence+[eos_int] for sequence in answers_int]
 
-def gen_embeddings(vad=True, counter=True, retro=True, data_dir="corpora/", w2vec_path="word_Vecs.npy", vad_vec_path="word_Vecs_VAD.npy", counterfit_path="word_Vecs_counterfit_affect.npy", retrofit_path="word_Vecs_retrofit_affect.npy", verbose=True):
-	data_loader = loader.Loader(data_dir, w2vec_path, regenerate=True) #Loads the vanilla Word2Vec embeddings
-	if vad:     data_loader.load_vad(vad_vec_path, regenerate=True)
-	if counter: data_loader.load_counterfit(counterfit_path, "./w2v_counterfit_append_affect.bin", regenerate=True)
-	if retro:   data_loader.load_retrofit(retrofit_path, "./w2v_retrofit_append_affect.bin", regenerate=True)
 
+class BaseExperiment(object):
 
-class Experiment(object):
-
-	def __init__(self, config_obj, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", infer=False):
+	def __init__(self, config_obj, infer=False):
 		"""
 		"""
 
@@ -68,18 +61,15 @@ class Experiment(object):
 		if self.inference:
 			if self.model_load is None:
 				raise ValueError("Must specify model_load in configuration when doing inference")
-			regenerate = False
 		else:
 			self.train_save = self.config.train_save
 			self.infer_save = self.config.infer_save
 			self.train_checkpoint = None #To be defined in subclasses
 			self.infer_checkpoint = None
 
-			if self.model_load is not None:
-				regenerate = False
 				
 
-		self.data = loader.Loader(data_dir, w2vec_path, regenerate=regenerate)
+		self.data = loader.Loader(config_obj.data_dir)
 		self.vocab2int = self.data.vocab2int
 		self.int2vocab = self.data.int2vocab
 		self.unk_int = self.data.unk_int
@@ -105,14 +95,6 @@ class Experiment(object):
 						valid_prompts_int=self.valid_prompts_int,
 						valid_answers_int=self.valid_answers_int
 					)
-
-
-	@property
-	def train_tag(self):
-		return "-train"
-	@property
-	def infer_tag(self):
-		return "-infer"
 
 	def train(self):	
 		raise NotImplementedError
@@ -165,11 +147,11 @@ class Experiment(object):
 		act_infer_prefix = self.infer_checkpoint.save(self.infer_save, sess)
 		print("Saved inference graph to {}".format(act_infer_prefix))
 
-class VADExp(Experiment):
-	def __init__(self, config_obj=None, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", vad_vec_path="word_Vecs_VAD.npy", infer=False):
-		Experiment.__init__(self, config_obj, regenerate, data_dir, w2vec_path, infer)
+class VADExp(BaseExperiment):
+	def __init__(self, config_obj, infer=False):
+		BaseExperiment.__init__(self, config_obj, infer)
 
-		full_embeddings = self.data.load_vad(vad_vec_path, regenerate=regenerate)
+		full_embeddings = np.load(config_obj.embeddings).astype(np.float32)
 		self.wordVecsWithMeta = append_meta(full_embeddings, self.metatoken)
 		
 		tf.reset_default_graph()
@@ -199,6 +181,11 @@ class VADExp(Experiment):
 
 		with tf.Session() as sess:
 			if self.model_load:
+				warnings.warn("You are reloading a model for training. This feature"
+						" is still not fully implemented. It restores the state"
+						" of the model variables and optimizer but not the number"
+						" of stalled steps, the validation cost record, or the"
+						" state of the shuffled corpora")
 				self.train_checkpoint.restore(self.model_load).assert_consumed().run_restore_ops()
 				print("Restored model at {}".format(self.model_load))
 			else:
@@ -218,14 +205,13 @@ class VADExp(Experiment):
 				training.training_loop(sess, self.model, affect_trainer, self.datasets, self.text_data, self.train_feeds, self.infer_feeds)	
 
 
-class Aff2VecExp(Experiment):
-	def __init__(self, config_obj=None, regenerate=False, data_dir="corpora/", w2vec_path="word_Vecs.npy", infer=False):
-		Experiment.__init__(self, config_obj, regenerate, data_dir, w2vec_path, exp_state, infer)
+class DistrExp(BaseExperiment):
+	def __init__(self, config_obj, infer=False):
+		BaseExperiment.__init__(self, config_obj, infer)
 
-		if counterfit:
-			full_embeddings = self.data.load_counterfit("word_Vecs_counterfit_affect.npy", "./w2v_counterfit_append_affect.bin", regenerate=regenerate)
-		else:
-			full_embeddings = self.data.load_retrofit("word_Vecs_retrofit_affect.npy", "./w2v_retrofit_append_affect.bin", regenerate=regenerate)
+		print(config_obj.embeddings)
+
+		full_embeddings = np.load(config_obj.embeddings).astype(np.float32)
 		self.wordVecsWithMeta = append_meta(full_embeddings, self.metatoken)
 		
 		tf.reset_default_graph()
@@ -238,7 +224,7 @@ class Aff2VecExp(Experiment):
 
 		#Set variables to be saved
 		self.train_checkpoint = None
-		if self.inference:
+		if not self.inference:
 			global_dict = var_dict( tf.global_variables() )
 			self.train_checkpoint = tf.train.Checkpoint(**global_dict)
 		train_dict = var_dict(tf.trainable_variables())
@@ -253,6 +239,11 @@ class Aff2VecExp(Experiment):
 		with tf.Session() as sess:
 			if self.model_load:
 				self.train_checkpoint.restore(self.model_load).assert_consumed().run_restore_ops()
+				warnings.warn("You are reloading a model for training. This feature"
+						" is still not fully implemented. It restores the state"
+						" of the model variables and optimizer but not the number"
+						" of stalled steps, the validation cost record, or the"
+						" state of the shuffled corpora")
 				print("Restored model at {}".format(self.model_load))
 			else:
 				sess.run(tf.global_variables_initializer())

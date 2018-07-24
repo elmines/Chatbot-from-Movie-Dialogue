@@ -1,36 +1,14 @@
 """
-Train or query a Seq2Seq dialog generation model.
+Train a Seq2Seq dialog generation model.
+
+Usage: `python config.yml`
 """
 
 #Utilities
 import sys
-import argparse
 
 #Local modules
-import experiment
 import config
-
-def create_parser():
-	parser = argparse.ArgumentParser(description="Train an affective neural dialog generation model."
-					             " You must select one of --vad, --counter, or --retro.",
-							conflict_handler="resolve")
-
-	parser.add_argument("--vad", action="store_true", help="Model with VAD values appended to Word2Vec embeddings")
-	parser.add_argument("--counter", action="store_true", help="Model with counterfitted embeddings")
-	parser.add_argument("--retro", action="store_true", help="Model with retrofitted embeddings")
-
-	parser.add_argument("--model", "-m", metavar="<path>", help="TensorFlow checkpoint path for continuing training or for inference. Note models have separate files for training and inference.")
-
-
-	#parser.add_argument("--infer", metavar="<path>", help="Generate responses to a text file of prompts rather than train. All prompts and their responses go to stdout. Requires --model.")
-	#parser.add_argument("--infer-out", metavar="<.xlsx path>", help="Write responses to Excel file rather than stdout.")
-
-	parser.add_argument("--embeddings-only", action="store_true", help="Just generate the embeddings and exit. You may specify multiple models")
-	parser.add_argument("--regen", "--regen-embeddings", action="store_true", help="Regenerate the model's embeddings prior to training")
-
-	parser.add_argument("--config", "-c", metavar="config.yml", help="YAML configuration file for setting experiment and model hyperparameters")
-
-	return parser
 
 
 #def beam_frame(beams):
@@ -47,28 +25,14 @@ def create_parser():
 		#out_frame["beams_{}".format(i)] = beam_col_i
 	#return out_frame
 
-def main(args):
+def main(config_obj):
 	"""
 	:param argparse.ArgumentParser args: Command-line arguments collected using argparse
 	"""
 
-	config_obj = config.Config(args.config)
-
-	if args.embeddings_only:
-		experiment.gen_embeddings(args.vad, args.counter, args.retro)
-		sys.exit(0)
-
-	regenerate = args.regen
-
-	if args.vad:
-		exp = experiment.VADExp(config_obj, regenerate, infer=False)
-	elif args.counter:
-		exp = experiment.Aff2VecExp(config_obj, regenerate, counterfit=True, infer=False)
-	elif args.retro:
-		exp = experiment.Aff2VecExp(config_obj, regenerate, counterfit=False, infer=False)
-	else:
-		parser.print_help()
-		sys.exit(0)
+	exp_constructor = config_obj.arch
+	exp = exp_constructor(config_obj)
+	exp.train()	
 
 	#if args.infer is not None:
 		#with open(args.infer, "r", encoding="utf-8") as prompts_file:
@@ -83,10 +47,11 @@ def main(args):
 				#for beam in beams[i]:
 					#sys.stdout.write("\t{}\n".format(beam))
 
-	exp.train()	
 	
 if __name__ == "__main__":
-	parser = create_parser()
-	args = parser.parse_args()
-	main(args)
+	if len(sys.argv) < 2:
+		sys.stderr.write("{}\n".format(__doc__))
+		sys.exit(0)
+	config_obj = config.Config(sys.argv[1])
+	main(config_obj)
 
