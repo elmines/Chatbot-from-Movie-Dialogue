@@ -2,20 +2,42 @@
 Module for customizing model and experiment hyperparameters
 """
 import os
+import warnings
 import time
-from collections import namedtuple
 import yaml
 
 #Local modules
 import experiment
 
-class Setting(namedtuple("Setting", ["name", "type_fn", "default"])):
-	"""
-	str name: Name of the setting
-	callable type_fn: Function that transforms the YAML value to the desired type/object
-	callable default: Supplier function that takes no parameters and returns a default value
-	"""
-	pass
+class Setting(object):
+
+	def __init__(self, name, type_fn, default, dependencies=None):
+		"""
+		:param str         name: Name of the setting
+		:param callable type_fn: Function that transforms the YAML value to the desired type/object
+		:param callable default: Supplier function that takes no parameters and returns a default value
+		"""
+		self._name = name
+		self._type_fn = type_fn
+		self._default = default
+
+		if isinstance(dependencies, Setting):
+			dependencies = [dependencies]	
+		self._dependencies = dependencies
+
+	@property
+	def name(self):
+		return self._name
+	@property
+	def type_fn(self):
+		return self._type_fn
+	@property
+	def default(self):
+		return self._default
+	@property
+	def dependencies(self):
+		return self._dependencies
+
 
 def _maybe_abspath(path):
 	"""
@@ -24,21 +46,12 @@ def _maybe_abspath(path):
 	"""
 	return os.path.abspath(path) if path is not None else path
 
-def arch_convert(arch_str):
-	"""
-	:param str arch_str: String representing the model to be constructed
-
-	:returns Constructor for an experiment.BaseExperiment object
-	:rtype experiment.BaseExperiment
-	"""
-
-	
 
 
 class Config(object):
 
 	def __init__(self, config_file=None):	
-		self._setting_dict = Config._define_settings()
+		self._define_settings()
 		self.__setattr__ = self._setattr_base #Override __setattr__ after assigning _setting_dict
 
 		if config_file:
@@ -48,16 +61,7 @@ class Config(object):
 		else:
 			yaml_dict = {}
 
-		consumed_keys = set()
-		for setting in self._setting_dict.values():
-			name = setting.name
-			self.__setattr__(name, yaml_dict.get(name, setting.default()))
-			if name in yaml_dict:
-				consumed_keys.add(name)
-
-		invalid_keys = set(yaml_dict) - consumed_keys
-		if len(invalid_keys) > 0:
-			raise KeyError("The following settings from {} are invalid: {}".format(config_file, invalid_keys))
+		self._initialize_settings(yaml_dict)
 
 
 	def _setattr_base(self, name, value):
@@ -73,13 +77,18 @@ class Config(object):
 		setting = self._setting_dict[name]
 		super(Config, self).__setattr__(name, setting.type_fn(value))
 
-	@staticmethod	
-	def _define_settings():
-		_timestamp = time.strftime("%b%d_%H:%M:%S")
+	def _define_settings(self):
 
 		_settings = []
 
+		_timestamp = time.strftime("%b%d_%H:%M:%S")
 		arch_dict = {"vad": experiment.VADExp, "distributed": experiment.DistrExp}
+		def default_embedding():
+			embeddings_dict = {experiment.VADExp : "word_Vecs_VAD.npy", experiment.DistrExp : "word_Vecs_retrofit_affect.npy"}
+			embeddings_path = embeddings_dict[self.arch]
+			warnings.warn("You did not specify the `embeddings` parameter. We are providing a default of {} for"
+					" the model {}, but this behavior will be deprecated.".format(embeddings_path, self.arch))
+			return embeddings_path
 
 		#Hyperparameters
 		_settings.append(Setting("num_layers",          int,             lambda: 1))
@@ -96,16 +105,46 @@ class Config(object):
 		_settings.append(Setting("model_load",          _maybe_abspath,  lambda: None))
 
 		#Architecture
-		_settings.append(Setting("arch", arch_dict.get, lambda: "distributed"))
-		_settings.append(Setting("embeddings", os.path.abspath, lambda: "word_Vecs_retrofit_affect.npy"))
+		arch_setting = Setting("arch",       arch_dict.__getitem__, lambda: "distributed")
+		_settings.append(arch_setting)
+		_settings.append(Setting("embeddings", os.path.abspath, default_embedding, dependencies=arch_setting))
 
 		#Data files
 		_settings.append(Setting("data_dir", os.path.abspath,     lambda: os.path.abspath("corpora/")))
 		_settings.append(Setting("infer_prompts", _maybe_abspath, lambda: None))
 	
-		_setting_dict = {setting.name:setting for setting in _settings}
-		return _setting_dict
+		self._setting_dict = {setting.name:setting for setting in _settings}
 	
+
+	#TODO: Check for cyclical dependencies among Settings
+	def _initialize_settings(self, yaml_dict):
+		#Sort of a memoization table that records which settings have already been computed
+		initialized = {name:False for name in self._setting_dict}
+		for setting in self._setting_dict.values():
+			self._initialize_setting(setting, yaml_dict, initialized)
+
+		invalid_keys = set(yaml_dict) - set(self._setting_dict)
+		if len(invalid_keys) > 0:
+			raise KeyError("The following settings from {} are invalid: {}".format(config_file, invalid_keys))
+
+
+
+	def _initialize_setting(self, setting, yaml_dict, initialized):
+		"""
+		:param Setting setting
+		:param dict(object, object) yaml_dict
+		:param dict(str, bool) initialized
+		"""
+		if initialized[setting.name]:
+			return	
+
+		if setting.dependencies:
+			for dependency in setting.dependencies:
+				self._initialize_setting(dependency, yaml_dict, initialized)
+
+		self.__setattr__(setting.name, yaml_dict.get(setting.name, setting.default()))
+		initialized[setting.name] = True
+
 
 
 
