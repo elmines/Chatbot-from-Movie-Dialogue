@@ -10,6 +10,9 @@ SEED = 1
 np.random.seed(SEED)
 tf.set_random_seed(SEED)
 
+#Data science
+import pandas as pd
+
 #Local modules
 import loader
 import models
@@ -105,10 +108,8 @@ class BaseExperiment(object):
 		:param list(str) prompts_text: Prompts to give the model
 		:param boolean      pre_clean: Whether prompts_text needs to be cleaned first
 
-		:returns The beams for each response where output[i][j] is the jth beam for the ith prompt
-		:rtype list(list(str))
-
-		Writes the cleaned prompts and their corresponding response(s) to standard output
+		:returns A dataframe of the prompts, their corrresponding responses, and any other metadata the model provides.
+		:rtype pd.DataFrame
 		"""
 
 		if not self.inference:
@@ -124,22 +125,32 @@ class BaseExperiment(object):
 
 		with tf.Session() as sess:
 			self.infer_checkpoint.restore(self.model_load).assert_consumed().run_restore_ops()
-			sys.stderr.write("Restored model from {}\n".format(self.restore_path))
-			beam_outputs = inference.infer(sess, self.model, prompts_int, self.infer_feeds, self.model.beams, pad_int, batch_size = 32)
+			sys.stderr.write("Restored model from {}\n".format(self.model_load))
+			#FIXME: Change batch_size to something reasonable
+			beam_outputs = inference.infer(sess, self.model, prompts_int, self.infer_feeds, self.model.beams, pad_int, batch_size = 1)
 
 
-		str_beams = []
 		int2vocab = self.data.int2vocab
 		beam_width = len(beam_outputs[0][0][:])
-		for i in range(len(beam_outputs)):
-			beam_set = []
-			for j in range(beam_width):
-				beam = beam_outputs[i][:,j] #jth beam for the ith sample
-				beam_text = " ".join([int2vocab[token] for token in beam if token != pad_int])
-				beam_set.append(beam_text)
-			str_beams.append(beam_set)
 
-		return str_beams
+		#for i in range(len(beam_outputs)):
+			#beam_set = []
+			#for j in range(beam_width):
+				#beam = beam_outputs[i][:,j] #jth beam for the ith sample
+				#beam_text = " ".join([int2vocab[token] for token in beam if token != pad_int])
+				#beam_set.append(beam_text)
+			#str_beams.append(beam_set)
+
+		out_frame = pd.DataFrame({"prompts": prompts_text})
+		for j in range(beam_width):
+			label = "beams_" + str(j)
+			column = []
+			for i in range(len(beam_outputs)):
+				beam = beam_outputs[i][:, j] #jth beam for the ith sample
+				beam_text = " ".join([int2vocab[token] for token in beam if token != pad_int])
+				column.append(beam)
+			out_frame[label] = column
+		return out_frame
 
 	def save_fn(self, sess):
 		act_train_prefix = self.train_checkpoint.save(self.train_save, sess)

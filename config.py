@@ -111,8 +111,12 @@ class Config(object):
 
 		#Data files
 		_settings.append(Setting("data_dir", os.path.abspath,     lambda: os.path.abspath("corpora/")))
+
+		#Inference
 		_settings.append(Setting("infer_prompts", _maybe_abspath, lambda: None))
-	
+		_settings.append(Setting("infer_sheet", _maybe_abspath, lambda: None))
+		_settings.append(Setting("infer_out", os.path.abspath, os.path.join(_timestamp, "out.xlsx")))	
+
 		self._setting_dict = {setting.name:setting for setting in _settings}
 	
 
@@ -126,8 +130,6 @@ class Config(object):
 		invalid_keys = set(yaml_dict) - set(self._setting_dict)
 		if len(invalid_keys) > 0:
 			raise KeyError("The following settings from {} are invalid: {}".format(config_file, invalid_keys))
-
-
 
 	def _initialize_setting(self, setting, yaml_dict, initialized):
 		"""
@@ -144,9 +146,6 @@ class Config(object):
 
 		self.__setattr__(setting.name, yaml_dict.get(setting.name, setting.default()))
 		initialized[setting.name] = True
-
-
-
 
 
 if __name__ == "__main__":
