@@ -123,7 +123,7 @@ class BaseExperiment(object):
 			self.infer_checkpoint.restore(self.model_load).assert_consumed().run_restore_ops()
 			sys.stderr.write("Restored model from {}\n".format(self.model_load))
 			#FIXME: Change batch_size to something reasonable
-			beam_outputs = inference.infer(sess, self.model, prompts_int, self.infer_feeds, self.model.beams, pad_int, batch_size = 1)
+			beam_outputs = inference.infer(sess, self.model, prompts_int, self.infer_feeds, self.model.beams, pad_int, batch_size=self.config.infer_batch_size)
 
 		int2vocab = self.data.int2vocab
 		beam_width = len(beam_outputs[0][0][:])
@@ -173,7 +173,7 @@ class VADExp(BaseExperiment):
 	def train(self, train_affect=False):
 		if self.inference:
 			raise ValueError("Tried to train a model in inference mode.")
-		xent_epochs = 15 
+		xent_epochs = self.config.max_epochs 
 
 		trainer = training.Trainer(self.save_fn, max_epochs=xent_epochs, max_stalled_steps=5)
 
@@ -188,7 +188,10 @@ class VADExp(BaseExperiment):
 				print("Restored model at {}".format(self.model_load))
 			else:
 				sess.run(tf.global_variables_initializer())
-			training.training_loop(sess, self.model, trainer, self.datasets, self.text_data, self.train_feeds, self.infer_feeds, min_epochs_before_validation=1, train_batch_size=1, valid_batch_size=1)
+			training.training_loop(sess, self.model, trainer, self.datasets, self.text_data, self.train_feeds, self.infer_feeds,
+						min_epochs_before_validation=1,
+						train_batch_size=self.config.train_batch_size,
+						valid_batch_size=self.config.infer_batch_size)
 
 			if train_affect:
 				affect_epochs = (trainer.epochs_completed // 4) + 1*(trainer.epochs_completed < 4)
@@ -231,7 +234,7 @@ class DistrExp(BaseExperiment):
 	def train(self):
 		if self.inference:
 			raise ValueError("Tried to train a model in inference mode.")
-		xent_epochs = 15
+		xent_epochs = self.config.max_epochs
 		trainer = training.Trainer(self.save_fn, max_epochs=xent_epochs, max_stalled_steps=5)
 
 		with tf.Session() as sess:
@@ -245,5 +248,8 @@ class DistrExp(BaseExperiment):
 				print("Restored model at {}".format(self.model_load))
 			else:
 				sess.run(tf.global_variables_initializer())
-			training.training_loop(sess, self.model, trainer, self.datasets, self.text_data, self.train_feeds, self.infer_feeds, min_epochs_before_validation=1)
+			training.training_loop(sess, self.model, trainer, self.datasets, self.text_data, self.train_feeds, self.infer_feeds,
+						min_epochs_before_validation=1,
+						train_batch_size = self.config.train_batch_size,
+						valid_batch_size = self.config.infer_batch_size)
 

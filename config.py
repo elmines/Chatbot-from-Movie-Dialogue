@@ -102,6 +102,12 @@ class Config(object):
 		_settings.append(Setting("gradient_clip_value", float,           lambda: 5.0))
 
 
+		#Training
+		_settings.append(Setting(      "max_epochs", int, lambda: 10))
+		_settings.append(Setting("train_batch_size", int, lambda: 64))
+		_settings.append(Setting("infer_batch_size", int, lambda: 32))
+
+
 		#Model loading and saving
 		_settings.append(Setting("train_save",          os.path.abspath, lambda: os.path.join(_timestamp, "train_model.ckpt")))
 		_settings.append(Setting("infer_save",          os.path.abspath, lambda: os.path.join(_timestamp, "infer_model.ckpt")))
