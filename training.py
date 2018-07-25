@@ -51,6 +51,7 @@ def batch_feeds(data_placeholders, questions_int, answers_int, batch_size, pad_t
 	Returns
 		a feed dictionary with mapping data_placeholders to a batch
 	"""
+	print(len(questions_int))
 	for batch_i in range(0, len(questions_int)//batch_size):
 		start_i = batch_i * batch_size
 		questions_batch = questions_int[start_i:start_i + batch_size]
@@ -136,34 +137,36 @@ class Trainer(object):
 		return self._record
 		
 
-def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, valid_feeds=None, train_batch_size=64, valid_batch_size=64, min_epochs_before_validation=2):
+def training_loop(sess, model, trainer, data, train_feeds=None, valid_feeds=None, train_batch_size=64, valid_batch_size=64, min_epochs_before_validation=2):
 	"""
-	data_placeholders - a tf_collections.DataPlaceholders namedtuple
-	fetches - a tf_collections.Fetches namedtuple	
-	train_feeds - a dictionary of extra feed-value pairs when calling sess.run for training
-	valid_feeds - the validation analog of train_feeds
-	Returns
-		- (float) The current epoch_no
-		- (float) The best validation loss computed
+	:param tf.Session                                      sess: The TensorFlow session with which to run model's operations
+	:param models.Seq2Seq                                 model: The model representing the computations to be performed
+	:param Trainer                                      trainer: The Trainer, which controls the flow of training
+	:param data.Data                                       data: Data object with members **train_prompts**, **train_answers**, **valid_prompts**, **valid_answers**, **pad_int**
+	:param dict(tf.Tensor, object)                  train_feeds: Feed-dict when training
+	:param dict(tf.Tensor, object)                  valid_feeds: Feed-dict when running validation
+	:param int                                 train_batch_size: Minibatch size during training
+	:param int                                 valid_batch_size: Minibatch size during validation
+	:param int                     min_epochs_before_validation: Minimum number of epochs to perform before doing validation as well
+
+
+	FIXME: *data* will not need to have a member *pad_int* once we verify that we can simply zero-pad the sequences
 	"""
 
 	data_placeholders = model.data_placeholders
 
 	#Data
-	(train_prompts_int, train_answers_int) = (datasets.train_prompts_int, datasets.train_answers_int)
-	(valid_prompts_int, valid_answers_int) = (datasets.valid_prompts_int, datasets.valid_answers_int)
-	(prompts_int_to_vocab, answers_int_to_vocab) = text_data.prompts_int2vocab, text_data.answers_int2vocab
-	(unk_int, pad_int) = text_data.unk_int, text_data.pad_int
+	(train_prompts_int, train_answers_int) = (data.train_prompts.indices, data.train_answers.indices)
+	(valid_prompts_int, valid_answers_int) = (data.valid_prompts.indices, data.valid_answers.indices)
+	pad_int = text_data.pad_int
 	
 	#Logging
 	num_tokens = lambda feed_dict: sum(feed_dict[data_placeholders.target_lengths])
 
 	#Fetches
 	(train_op, train_cost, valid_cost) = (model.train_op, model.train_cost, model.valid_cost)
-	beams = model.beams
 
 	display_step = 100
-	
 	while not trainer.finished:
 		print("Shuffling training data . . .")
 		(train_prompts_int, train_answers_int) = parallel_shuffle(train_prompts_int, train_answers_int)
@@ -193,11 +196,9 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 				tot_train_tokens = 0
 				tot_train_loss = 0
 				train_start_time = time.time()
-
-
+			break
 		trainer.inc_epochs_completed()
 		trainer.save_latest(sess)
-
 		#TODO: For simplicity's sake we're just performing validation after each epoch
 		#VALIDATION CHECK
 		if trainer.epochs_completed >= min_epochs_before_validation:
@@ -214,7 +215,7 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 				tot_valid_tokens += batch_tokens
 				tot_valid_loss += batch_tokens*loss
 
-
+				break
 			duration = time.time() - valid_start_time
 			avg_valid_loss = tot_valid_loss / tot_valid_tokens
 			 
@@ -222,3 +223,4 @@ def training_loop(sess, model, trainer, datasets, text_data, train_feeds=None, v
 			print("Loss-per-Token = {}".format(avg_valid_loss))
 			trainer.check_validation_loss(sess, avg_valid_loss)
 			valid_check_no += 1
+		break

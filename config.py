@@ -173,7 +173,11 @@ class Config(object):
 		_settings.append(Setting("embeddings", os.path.abspath, default_embedding, dependencies=arch_setting))
 
 		#Data files
-		_settings.append(Setting("data_dir", os.path.abspath,     lambda: os.path.abspath("corpora/")))
+		tuple_paths = lambda paths: tuple(os.path.abspath(path) for path in paths)
+		_settings.append(Setting("train_corpora", tuple_paths, lambda: None))
+		_settings.append(Setting("valid_corpora", tuple_paths, lambda: None))
+		_settings.append(Setting("unk", str, lambda: None))
+
 
 		#Inference
 		_settings.append(Setting("infer_text", _maybe_abspath, lambda: None))

@@ -72,9 +72,20 @@ class BaseExperiment(object):
 
 				
 
-		self.data = loader.Loader(config_obj.data_dir)
-		self.vocab2int = self.data.vocab2int
-		self.int2vocab = self.data.int2vocab
+		with open(config_obj.vocab, "r", encoding="utf-8") as r:
+			text2int = {}
+			for line in r.readlines():
+				(word, index) = line.split()
+				tex2int[word] = int(index)
+
+		self.data = data.Data(text2int, config_obj.unk,
+					train_prompts = config_obj.train_corpora[0],
+					train_answers = config_obj.train_corpora[1],
+					valid_prompts = config_obj.valid_corpora[0],
+					valid_answers = config_obj.valid_corpora[1]
+
+		self.vocab2int = self.data.text2int
+		self.int2vocab = self.data.int2text
 		self.unk_int = self.data.unk_int
 		self.unk = self.data.unk
 
@@ -82,22 +93,12 @@ class BaseExperiment(object):
 		self.go_token = self.metatoken
 		self.eos_token = self.metatoken
 		self.pad_token = self.metatoken
+
+		self.data.pad_int = self.pad_token #FIXME: Don't do ad-hoc adding of members to data
 		
+		self.data.train_answers.indices = append_eos(self.data.train_answers.indices, self.eos_token)
+		self.data.valid_answers.indices = append_eos(self.data.valid_answers.indices, self.eos_token)
 
-		self.text_data = tf_collections.TextData(prompts_int2vocab=self.int2vocab, answers_int2vocab=self.int2vocab,
-						unk_int=self.unk_int, eos_int=self.eos_token, pad_int=self.pad_token)
-
-
-		self.train_prompts_int = self.data.train_prompts_int
-		self.train_answers_int = append_eos(self.data.train_answers_int, self.eos_token)
-		self.valid_prompts_int = self.data.valid_prompts_int
-		self.valid_answers_int = append_eos(self.data.valid_answers_int, self.eos_token)
-
-		self.datasets = tf_collections.Datasets(train_prompts_int=self.train_prompts_int,
-						train_answers_int=self.train_answers_int,
-						valid_prompts_int=self.valid_prompts_int,
-						valid_answers_int=self.valid_answers_int
-					)
 
 	def train(self):	
 		raise NotImplementedError
@@ -188,10 +189,12 @@ class VADExp(BaseExperiment):
 				print("Restored model at {}".format(self.model_load))
 			else:
 				sess.run(tf.global_variables_initializer())
-			training.training_loop(sess, self.model, trainer, self.datasets, self.text_data, self.train_feeds, self.infer_feeds,
-						min_epochs_before_validation=1,
-						train_batch_size=self.config.train_batch_size,
-						valid_batch_size=self.config.infer_batch_size)
+
+
+			training.training_loop(sess, self.model, trainer, self.data, self.train_feeds, self.valid_feeds,
+						train_batch_size=self.config_obj.train_batch_size,
+						valid_batch_size=self.config_obj.valid_batch_size,
+						min_epochs_before_validation=1)
 
 			if train_affect:
 				affect_epochs = (trainer.epochs_completed // 4) + 1*(trainer.epochs_completed < 4)
@@ -202,8 +205,10 @@ class VADExp(BaseExperiment):
 				affect_trainer = training.Trainer(self.checkpoint_best, self.checkpoint_latest, save_fn, epochs_completed=trainer.epochs_completed,
 						max_epochs=total_epochs, saver=trainer.saver,
 						best_valid_cost = trainer.best_valid_cost)
+				training.training_loop(sess, self.model, affect_trainer, self.data, self.train_feeds, self.valid_feeds,
+						train_batch_size=self.config_obj.train_batch_size,
+						valid_batch_size=self.config_obj.valid_batch_size)
 
-				training.training_loop(sess, self.model, affect_trainer, self.datasets, self.text_data, self.train_feeds, self.infer_feeds)	
 
 
 class DistrExp(BaseExperiment):
