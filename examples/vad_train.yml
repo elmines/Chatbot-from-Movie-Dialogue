@@ -1,0 +1,4 @@
+arch : vad
+embeddings : word_Vecs_VAD.npy
+train_save : models/train_model.ckpt
+infer_save : models/infer_model.ckpt

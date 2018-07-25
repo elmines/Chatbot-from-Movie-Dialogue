@@ -1,0 +1,7 @@
+arch : vad
+embeddings : word_Vecs_VAD.npy         #Yes, for now we sadly still need to specify this parameter during inference
+model_load : models/infer_model.ckpt-1 #Make sure to load the file for the inference graph, not the training one
+infer_sheet : examples/test_set_short.xlsx
+infer_batch_size : 1
+sheet_col : target_questions
+infer_out : responses.xlsx
