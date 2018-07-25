@@ -2,7 +2,6 @@
 Module for customizing model and experiment hyperparameters
 """
 import os
-import warnings
 import time
 import yaml
 
@@ -89,7 +88,7 @@ class Config(object):
 	:ivar path-like           infer_save: Path prefix at which to save inference graphs during training; default `None`
 	:ivar path-like           model_load: Path to a tf.train.Checkpoint file (used for continuing training or loading a model for inference); default `None`
 	:ivar str                       arch: Type of architecture, valid values are \"vad\" (for :py:class:`experiment.VADExp`) and \"distributed\" (for :py:class:`experiment.Aff2VecExp`); default \"distributed\"
-	:ivar path-like           embeddings: Path to a Numpy file (i.e. .npy or .npz) containing the embeddings for the model; default \"word_Vecs_VAD.npy\" or \"word_Vecs_retrofit_affect.npy\", depending on **arch**
+	:ivar path-like           embeddings: Path to a Numpy file (i.e. .npy or .npz) containing the embeddings for the model; default `None`
 	:ivar path-like                vocab: Path to a text file where each line is a word and its integer index, separated by a space
 	:ivar list(path-like)        corpora: Two paths to the prompts and responses corpora for training
 	:ivar list(path-like)  valid_corpora: Two paths to the prompts and responses corpora for validation
@@ -139,17 +138,10 @@ class Config(object):
 		"""
 		Subroutine that initializes a Config object's _setting_dict, which holds all its public memmbers
 		"""
-
 		_settings = []
 
 		_timestamp = time.strftime("%b%d_%H:%M:%S")
 		arch_dict = {"vad": experiment.VADExp, "distributed": experiment.DistrExp}
-		def default_embedding():
-			embeddings_dict = {experiment.VADExp : "word_Vecs_VAD.npy", experiment.DistrExp : "word_Vecs_retrofit_affect.npy"}
-			embeddings_path = embeddings_dict[self.arch]
-			warnings.warn("You did not specify the `embeddings` parameter. We are providing a default of \"{}\" for"
-					" the model {}, but this behavior will be deprecated.".format(embeddings_path, self.arch))
-			return embeddings_path
 
 		#Hyperparameters
 		_settings.append(Setting("num_layers",          int,             lambda: 1))
@@ -167,14 +159,13 @@ class Config(object):
 
 
 		#Model loading and saving
-		_settings.append(Setting("train_save",          os.path.abspath, lambda: os.path.join(_timestamp, "train_model.ckpt")))
-		_settings.append(Setting("infer_save",          os.path.abspath, lambda: os.path.join(_timestamp, "infer_model.ckpt")))
-		_settings.append(Setting("model_load",          _maybe_abspath,  lambda: None))
+		_settings.append(Setting("train_save", os.path.abspath, lambda: os.path.join(_timestamp, "train_model.ckpt")))
+		_settings.append(Setting("infer_save", os.path.abspath, lambda: os.path.join(_timestamp, "infer_model.ckpt")))
+		_settings.append(Setting("model_load",  _maybe_abspath, lambda: None))
 
 		#Architecture
-		arch_setting = Setting("arch",       arch_dict.__getitem__, lambda: "distributed")
-		_settings.append(arch_setting)
-		_settings.append(Setting("embeddings", os.path.abspath, default_embedding, dependencies=arch_setting))
+		_settings.append(Setting("arch",       arch_dict.__getitem__, lambda: "distributed"))
+		_settings.append(Setting("embeddings",        _maybe_abspath, lambda: None))
 
 		#Data files
 		tuple_paths = lambda paths: tuple(os.path.abspath(path) for path in paths)
@@ -185,7 +176,7 @@ class Config(object):
 
 
 		#Inference
-		_settings.append(Setting("infer_text", _maybe_abspath, lambda: None))
+		_settings.append(Setting("infer_text", _maybe_abspath,    lambda: None))
 		_settings.append(Setting("infer_sheet",   _maybe_abspath, lambda: None))
 		_settings.append(Setting("sheet_col",         _maybe_str, lambda: None))
 		_settings.append(Setting("infer_out",    os.path.abspath, lambda: os.path.join(_timestamp, "out.xlsx")))
