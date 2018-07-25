@@ -90,6 +90,10 @@ class Config(object):
 	:ivar path-like           model_load: Path to a tf.train.Checkpoint file (used for continuing training or loading a model for inference); default `None`
 	:ivar str                       arch: Type of architecture, valid values are \"vad\" (for :py:class:`experiment.VADExp`) and \"distributed\" (for :py:class:`experiment.Aff2VecExp`); default \"distributed\"
 	:ivar path-like           embeddings: Path to a Numpy file (i.e. .npy or .npz) containing the embeddings for the model; default \"word_Vecs_VAD.npy\" or \"word_Vecs_retrofit_affect.npy\", depending on **arch**
+	:ivar path-like                vocab: Path to a text file where each line is a word and its integer index, separated by a space
+	:ivar list(path-like)        corpora: Two paths to the prompts and responses corpora for training
+	:ivar list(path-like)  valid_corpora: Two paths to the prompts and responses corpora for validation
+	:ivar str                        unk: The unknown token, which must be listed in **vocab**
 	:ivar path-like             data_dir: Path to the directory where train_prompts.txt, ..., vocab.txt reside; default \"corpora/\"
 	:ivar path-like           infer_text: Path to a text file with prompts separated by newlines; default `None`
 	:ivar path-like          infer_sheet: .xlsx file where all the prompts are in a single column; default `None`
@@ -174,9 +178,10 @@ class Config(object):
 
 		#Data files
 		tuple_paths = lambda paths: tuple(os.path.abspath(path) for path in paths)
-		_settings.append(Setting("train_corpora", tuple_paths, lambda: None))
-		_settings.append(Setting("valid_corpora", tuple_paths, lambda: None))
-		_settings.append(Setting("unk", str, lambda: None))
+		_settings.append(Setting("vocab", os.path.abspath, lambda: None))
+		_settings.append(Setting("corpora", tuple_paths, lambda: []))
+		_settings.append(Setting("valid_corpora", tuple_paths, lambda: []))
+		_settings.append(Setting("unk", _maybe_str, lambda: None))
 
 
 		#Inference
@@ -220,6 +225,11 @@ class Config(object):
 			for dependency in setting.dependencies:
 				self._initialize_setting(dependency, yaml_dict, initialized)
 
-		self.__setattr__(setting.name, yaml_dict.get(setting.name, setting.default()))
+		if setting.name in yaml_dict:
+			value = yaml_dict[setting.name]
+		else:
+			value = setting.default() #Calling this only if necessary allows us to put warning messages in the default functions
+
+		self.__setattr__(setting.name, yaml_dict.get(setting.name, value))
 		initialized[setting.name] = True
 

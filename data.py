@@ -1,9 +1,6 @@
 """
 Module for loading and namespacing corpora
 """
-
-from collections import namedtuple
-
 def read_tokens(path):
 	"""
 	:param path-like path: Path to file containing newline-separated sequences
@@ -15,13 +12,20 @@ def read_tokens(path):
 		text = [ [token for token in line.strip().split(" ")] for line in r.readlines()]
 	return text
 
-class Corpus(namedtuple("Corpus", ["text", "indices"])):
+class Corpus(object):
 	"""
-	Namespace for a corpus's textual tokens and their corresponding integer indices
+	Namespace for a corpus's textual tokens and their corresponding integer indices.
 
 	:ivar list(list(str))    text: The corpus's tokens
 	:ivar list(list(int)) indices: The corresponding integer indices for each token in **text**.
 	"""
+	def __init__(self, text, indices):
+		"""
+		:param list(list(str))    text: The corpus's tokens
+		:param list(list(int)) indices: The corresponding integer indices for each token in **text**.
+		"""
+		self.text = text
+		self.indices = indices
 
 class Data(object):
 	"""
@@ -39,12 +43,12 @@ class Data(object):
 		self._text2int = text2int
 		self._unk = unk
 		self._unk_int = self._text2int[self._unk]
-		self._int2text = {index:word for (word, index) in self.vocab2int.items()}
+		self._int2text = {index:word for (word, index) in self._text2int.items()}
 
 		text_to_int = lambda sequences: [[self._text2int[token] for token in seq] for seq in sequences]
-		for (name, path) in corpora_dict.iteritems():
+		for (name, path) in corpora_dict.items():
 			text = read_tokens(path)
-			indices = text_to_int(tokens)
+			indices = text_to_int(text)
 			corpus = Corpus(text, indices)	
 			self.__setattr__(name, corpus)
 

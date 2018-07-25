@@ -51,7 +51,6 @@ def batch_feeds(data_placeholders, questions_int, answers_int, batch_size, pad_t
 	Returns
 		a feed dictionary with mapping data_placeholders to a batch
 	"""
-	print(len(questions_int))
 	for batch_i in range(0, len(questions_int)//batch_size):
 		start_i = batch_i * batch_size
 		questions_batch = questions_int[start_i:start_i + batch_size]
@@ -158,7 +157,7 @@ def training_loop(sess, model, trainer, data, train_feeds=None, valid_feeds=None
 	#Data
 	(train_prompts_int, train_answers_int) = (data.train_prompts.indices, data.train_answers.indices)
 	(valid_prompts_int, valid_answers_int) = (data.valid_prompts.indices, data.valid_answers.indices)
-	pad_int = text_data.pad_int
+	pad_int = data.pad_int
 	
 	#Logging
 	num_tokens = lambda feed_dict: sum(feed_dict[data_placeholders.target_lengths])
@@ -187,16 +186,13 @@ def training_loop(sess, model, trainer, data, train_feeds=None, valid_feeds=None
     
 			if batch_i % display_step == 0:
 				duration = time.time() - train_start_time
-
 				avg_train_loss = tot_train_loss / tot_train_tokens
-            
 				print('Epoch {:>3}/{} Batch {:>4}/{} - Loss-per-Token: {:>9.6f}, Seconds: {:>4.2f}'
               				.format(trainer.epochs_completed+1, trainer.max_epochs, batch_i, len(train_prompts_int) // train_batch_size, avg_train_loss, duration),
                  			flush=True)
 				tot_train_tokens = 0
 				tot_train_loss = 0
 				train_start_time = time.time()
-			break
 		trainer.inc_epochs_completed()
 		trainer.save_latest(sess)
 		#TODO: For simplicity's sake we're just performing validation after each epoch
@@ -204,7 +200,6 @@ def training_loop(sess, model, trainer, data, train_feeds=None, valid_feeds=None
 		if trainer.epochs_completed >= min_epochs_before_validation:
 			print("Shuffling validation data . . .")
 			(valid_prompts_int, valid_answers_int) = parallel_shuffle(valid_prompts_int, valid_answers_int)
-			
 			tot_valid_tokens = 0
 			tot_valid_loss = 0
 			valid_start_time = time.time()
@@ -214,13 +209,9 @@ def training_loop(sess, model, trainer, data, train_feeds=None, valid_feeds=None
 				batch_tokens = num_tokens(feed_dict)
 				tot_valid_tokens += batch_tokens
 				tot_valid_loss += batch_tokens*loss
-
-				break
 			duration = time.time() - valid_start_time
 			avg_valid_loss = tot_valid_loss / tot_valid_tokens
-			 
 			print("Processed validation set in {:>4.2f} seconds".format(duration))
 			print("Loss-per-Token = {}".format(avg_valid_loss))
 			trainer.check_validation_loss(sess, avg_valid_loss)
 			valid_check_no += 1
-		break

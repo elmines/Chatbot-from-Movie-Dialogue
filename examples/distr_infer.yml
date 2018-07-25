@@ -1,8 +1,8 @@
 #Notice that you still need to reuse settings like these when reloading a model
-arch             : vad
+arch             : distributed
 
 #Yes, for now sadly we still have to reload resources like embeddings and vocabulary during inference
-embeddings       : word_Vecs_VAD.npy
+embeddings       : word_Vecs_counterfit_affect.npy
 vocab            : corpora/vocab.txt
 unk              : <UNK>
 rnn_size         : 512 

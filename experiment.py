@@ -14,10 +14,9 @@ tf.set_random_seed(SEED)
 import pandas as pd
 
 #Local modules
-import loader
+import data
 import models
 import training
-import tf_collections
 import inference
 import config
 
@@ -76,13 +75,16 @@ class BaseExperiment(object):
 			text2int = {}
 			for line in r.readlines():
 				(word, index) = line.split()
-				tex2int[word] = int(index)
+				text2int[word] = int(index)
 
-		self.data = data.Data(text2int, config_obj.unk,
-					train_prompts = config_obj.train_corpora[0],
-					train_answers = config_obj.train_corpora[1],
+		if self.inference:
+			self.data = data.Data(text2int, config_obj.unk)
+		else:
+			self.data = data.Data(text2int, config_obj.unk,
+					train_prompts = config_obj.corpora[0],
+					train_answers = config_obj.corpora[1],
 					valid_prompts = config_obj.valid_corpora[0],
-					valid_answers = config_obj.valid_corpora[1]
+					valid_answers = config_obj.valid_corpora[1])
 
 		self.vocab2int = self.data.text2int
 		self.int2vocab = self.data.int2text
@@ -96,8 +98,9 @@ class BaseExperiment(object):
 
 		self.data.pad_int = self.pad_token #FIXME: Don't do ad-hoc adding of members to data
 		
-		self.data.train_answers.indices = append_eos(self.data.train_answers.indices, self.eos_token)
-		self.data.valid_answers.indices = append_eos(self.data.valid_answers.indices, self.eos_token)
+		if not self.inference:
+			self.data.train_answers.indices = append_eos(self.data.train_answers.indices, self.eos_token)
+			self.data.valid_answers.indices = append_eos(self.data.valid_answers.indices, self.eos_token)
 
 
 	def train(self):	
@@ -114,19 +117,18 @@ class BaseExperiment(object):
 			raise ValueError("Can only call infer() if model is constructed in inference mode")
 
 		unk_int = self.data.unk_int
-		vocab2int = self.data.vocab2int
+		vocab2int = self.data.text2int
 
 		cleaned_prompts = [seq.strip() for seq in prompts_text]
 		prompts_int = [ [vocab2int.get(token, unk_int) for token in seq.split()] for seq in cleaned_prompts]
-		pad_int = self.text_data.pad_int
+		pad_int = self.data.pad_int
 
 		with tf.Session() as sess:
 			self.infer_checkpoint.restore(self.model_load).assert_consumed().run_restore_ops()
 			sys.stderr.write("Restored model from {}\n".format(self.model_load))
-			#FIXME: Change batch_size to something reasonable
 			beam_outputs = inference.infer(sess, self.model, prompts_int, self.infer_feeds, self.model.beams, pad_int, batch_size=self.config.infer_batch_size)
 
-		int2vocab = self.data.int2vocab
+		int2vocab = self.data.int2text
 		beam_width = len(beam_outputs[0][0][:])
 
 		out_frame = pd.DataFrame({"prompts": prompts_text})
@@ -191,9 +193,9 @@ class VADExp(BaseExperiment):
 				sess.run(tf.global_variables_initializer())
 
 
-			training.training_loop(sess, self.model, trainer, self.data, self.train_feeds, self.valid_feeds,
-						train_batch_size=self.config_obj.train_batch_size,
-						valid_batch_size=self.config_obj.valid_batch_size,
+			training.training_loop(sess, self.model, trainer, self.data, self.train_feeds, self.infer_feeds,
+						train_batch_size=self.config.train_batch_size,
+						valid_batch_size=self.config.infer_batch_size,
 						min_epochs_before_validation=1)
 
 			if train_affect:
@@ -206,16 +208,18 @@ class VADExp(BaseExperiment):
 						max_epochs=total_epochs, saver=trainer.saver,
 						best_valid_cost = trainer.best_valid_cost)
 				training.training_loop(sess, self.model, affect_trainer, self.data, self.train_feeds, self.valid_feeds,
-						train_batch_size=self.config_obj.train_batch_size,
-						valid_batch_size=self.config_obj.valid_batch_size)
+						train_batch_size=self.config.train_batch_size,
+						valid_batch_size=self.config.infer_batch_size)
 
 
 
 class DistrExp(BaseExperiment):
+	"""
+	An experiment using distributed affective embeddings.
+	"""
 	def __init__(self, config_obj, infer=False):
 		BaseExperiment.__init__(self, config_obj, infer)
 
-		print(config_obj.embeddings)
 
 		full_embeddings = np.load(config_obj.embeddings).astype(np.float32)
 		self.wordVecsWithMeta = append_meta(full_embeddings, self.metatoken)
@@ -253,8 +257,8 @@ class DistrExp(BaseExperiment):
 				print("Restored model at {}".format(self.model_load))
 			else:
 				sess.run(tf.global_variables_initializer())
-			training.training_loop(sess, self.model, trainer, self.datasets, self.text_data, self.train_feeds, self.infer_feeds,
-						min_epochs_before_validation=1,
-						train_batch_size = self.config.train_batch_size,
-						valid_batch_size = self.config.infer_batch_size)
+			training.training_loop(sess, self.model, trainer, self.data, self.train_feeds, self.infer_feeds,
+						train_batch_size=self.config.train_batch_size,
+						valid_batch_size=self.config.infer_batch_size,
+						min_epochs_before_validation=1)
 
