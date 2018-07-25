@@ -10,6 +10,9 @@ import yaml
 import experiment
 
 class Setting(object):
+	"""
+	A setting/parameter that can be set in a YAML configuration file.
+	"""
 
 	def __init__(self, name, type_fn, default, dependencies=None):
 		"""
@@ -27,15 +30,27 @@ class Setting(object):
 
 	@property
 	def name(self):
+		"""
+		The name of the Setting
+		"""
 		return self._name
 	@property
 	def type_fn(self):
+		"""
+		A function with signature type_fn(yaml_value) -> converted_value
+		"""
 		return self._type_fn
 	@property
 	def default(self):
+		"""
+		A callable that takes no parameters and returns a default value (still passed into type_fn later)
+		"""
 		return self._default
 	@property
 	def dependencies(self):
+		"""
+		A list of Setting objects that must first be set before this Setting may be set
+		"""
 		return self._dependencies
 
 
