@@ -93,7 +93,6 @@ class Config(object):
 	:ivar list(path-like)        corpora: Two paths to the prompts and responses corpora for training
 	:ivar list(path-like)  valid_corpora: Two paths to the prompts and responses corpora for validation
 	:ivar str                        unk: The unknown token, which must be listed in **vocab**
-	:ivar path-like             data_dir: Path to the directory where train_prompts.txt, ..., vocab.txt reside; default \"corpora/\"
 	:ivar path-like           infer_text: Path to a text file with prompts separated by newlines; default `None`
 	:ivar path-like          infer_sheet: .xlsx file where all the prompts are in a single column; default `None`
 	:ivar str                  sheet_col: Column of **infer_sheet** from which to pull prompts; default `None` (caller can decide how to handle this case)

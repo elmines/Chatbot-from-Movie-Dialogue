@@ -1,7 +1,16 @@
 """
 Train a Seq2Seq dialog generation model.
 
-Usage: `python train.py config.yml`
+Usage: python train.py config.yml
+
+Mandatory YAML parameters (see :py:mod:`config`):
+
+- vocab
+- corpora
+- valid_corpora
+- unk
+- embeddings
+
 """
 
 #Utilities
@@ -14,7 +23,7 @@ import config
 
 def main(config_obj):
 	"""
-	:param argparse.ArgumentParser args: Command-line arguments collected using argparse
+	:param config.Config config_obj: Settings for the experiment
 	"""
 
 	exp_constructor = config_obj.arch
