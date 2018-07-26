@@ -1,10 +1,24 @@
 """
 Infer responses using a Seq2Seq dialog generation model.
 
-Usage: `python infer.py config.yml`
+Usage: python infer.py config.yml
 
-Required YAML parameters:
-     - model_load
+Required YAML parameters (see :py:mod:`config`):
+
+- vocab
+- corpora
+- valid_corpora
+- unk
+- embeddings
+- model_load
+- arch
+
+Recommended YAML parameters:
+
+- infer_sheet
+- infer_col
+- infer_out
+
 """
 
 #Utilities
@@ -19,6 +33,12 @@ import config
 
 
 def _extract_prompts(config_obj):
+	"""
+	:param config.Config config_obj: The configuration for the experiment
+
+	:returns The prompts, either from a spreadsheet, a text file, or stdin
+	:rtype list(str)
+	"""
 	if not(config_obj.infer_text or config_obj.infer_sheet):
 		sys.stderr.write("No prompts provided with YAML parameters `infer_text` or `infer_sheet`.\n"
                		         "Reading prompts from standard input . . .\n")
@@ -45,6 +65,11 @@ def _extract_prompts(config_obj):
 	return prompts_text
 
 def main(config_obj):
+	"""
+	Evaluate the model
+
+	:param config.Config config_obj: Settings for the experiment
+	"""
 	if not config_obj.model_load:
 		raise ValueError("Must specify `model_load` YAML parameter when performing inference.")
 	exp_constructor = config_obj.arch

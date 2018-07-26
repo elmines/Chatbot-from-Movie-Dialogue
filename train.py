@@ -11,6 +11,12 @@ Mandatory YAML parameters (see :py:mod:`config`):
 - unk
 - embeddings
 
+Recommended YAML parameters:
+
+- arch (will soon be mandatory)
+- train_save
+- infer_save
+
 """
 
 #Utilities
@@ -23,6 +29,8 @@ import config
 
 def main(config_obj):
 	"""
+	Train the model
+
 	:param config.Config config_obj: Settings for the experiment
 	"""
 
