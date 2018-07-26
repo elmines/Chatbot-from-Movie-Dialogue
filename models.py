@@ -107,18 +107,13 @@ class Seq2Seq(object):
 	Abstract class representing standard sequence-to-sequence model
 	"""
 
-	def __init__(self, enc_embeddings, dec_embeddings, go_token, eos_token, num_layers=1, rnn_size=1024, attn_size=256, output_layer=None, learning_rate=0.0001, beam_width=1, infer=False):
+	def __init__(self, enc_embeddings, dec_embeddings, go_token, eos_token, config, output_layer=None, infer=False):
 		"""
 		:param enc_embeddings: Word embeddings for encoder
 		:param dec_embeddings: Word embeddings for decoder
 		:param int go_token: id for the token fed into the first decoder cell
 		:param int eos_token: End-Of-Sequence token that tells the decoder to stop decoding
-		:param int num_layers: Number of layers for both the encoder and decoder
-		:param int rnn_size: Size of RNN cell hidden state
-		:param int attn_size: Size of the attention mechanism
 		:param tf.layers.Layer output_layer: TensorFlow layer applied to the decoder output
-		:param float learning_rate: Scalar determining how far to follow a gradient
-		:param int beam_width: The number of beams to generate during inference (beam_width=1 performs greedy decoding)
 		:param boolean infer: Whether inference or training is being performed
 		"""
 
@@ -134,8 +129,9 @@ class Seq2Seq(object):
 		self._dec_embed_input = tf.nn.embedding_lookup(dec_embeddings, _process_decoding_input(self._targets, go_token))
 	
 	
-		forward_cell = _multi_dropout_cell(rnn_size, self._keep_prob, num_layers)
-		backward_cell = _multi_dropout_cell(rnn_size, self._keep_prob, num_layers)
+		forward_cell = _multi_dropout_cell(config.rnn_size, self._keep_prob, config.num_layers)
+		backward_cell = _multi_dropout_cell(config.rnn_size, self._keep_prob, config.num_layers)
+
 		enc_outputs, enc_states =  tf.nn.bidirectional_dynamic_rnn(cell_fw = forward_cell, cell_bw = backward_cell,
 										sequence_length = self._source_lengths,
 										inputs = self._enc_embed_input, dtype=tf.float32)
@@ -143,11 +139,12 @@ class Seq2Seq(object):
 		init_dec_state = enc_states[0] 
 	
 	
-		dec_cell = _multi_dropout_cell(rnn_size, self._keep_prob, num_layers)
-		self._beam_width = beam_width
+		dec_cell = _multi_dropout_cell(config.rnn_size, self._keep_prob, config.num_layers)
+		self._beam_width = config.beam_width
 		self._infer = infer
 		decoder_output = _beam_search_decoder(init_dec_state, concatenated_enc_output, self._dec_embed_input, dec_embeddings,
-	                        dec_cell, attn_size, output_layer, self._source_lengths, self._target_lengths, go_token, eos_token, self._beam_width, infer)
+	                        dec_cell, config.attn_size, output_layer, self._source_lengths, self._target_lengths, go_token, eos_token, config.beam_width, infer)
+
 		if infer:
 			self._beams = decoder_output
 			self._train_logits = None
@@ -160,7 +157,7 @@ class Seq2Seq(object):
 			self._eval_mask = tf.sequence_mask(self._target_lengths, dtype=tf.float32)
 			self._xent = tf.contrib.seq2seq.sequence_loss(self._train_logits, self._targets, self.eval_mask)
 			self._perplexity = tf.contrib.seq2seq.sequence_loss(self._train_logits, self._targets, self.eval_mask, softmax_loss_function=metrics.perplexity)
-			self._optimizer = tf.train.AdamOptimizer(learning_rate)
+			self._optimizer = tf.train.AdamOptimizer(config.learning_rate)
 			self._beams = None
 
 
@@ -235,13 +232,15 @@ class Seq2Seq(object):
 		return self._dec_embed_input
 
 class Aff2Vec(Seq2Seq):
-	def __init__(self, *args, **kwargs):
-		super(Aff2Vec, self).__init__(*(args), **(kwargs))
+	def __init__(self, **kwargs):
+		super(Aff2Vec, self).__init__(**(kwargs))
 
+		config = kwargs["config"]
 		infer = kwargs["infer"]
 		if not infer:
 			gradients = self.optimizer.compute_gradients(self.xent)
-			capped_gradients = [(tf.clip_by_value(grad, -5., 5.), var) for grad, var in gradients if grad is not None]
+
+			capped_gradients = [(tf.clip_by_value(grad, -config.gradient_clip_value, config.gradient_clip_value), var) for grad, var in gradients if grad is not None]
 			self._train_op = self.optimizer.apply_gradients(capped_gradients)
 		else:
 			self._train_op = None
@@ -259,20 +258,19 @@ class Aff2Vec(Seq2Seq):
 
 class VADAppended(Seq2Seq):
 
-	def __init__(self, full_embeddings, go_token, eos_token,
-                num_layers=1, rnn_size=1024, attn_size=256, output_layer=None,
-		keep_prob = 1, learning_rate=0.0001, beam_width=1, infer=False,
- 		affect_strength=0.5):
+	def __init__(self, full_embeddings, go_token, eos_token, config, output_layer=None,
+		keep_prob = 1, infer=False, affect_strength=0.5):
 		"""
 		affect_strength - hyperparameter in the range [0.0, 1.0)
 		"""
 		
-		Seq2Seq.__init__(self, full_embeddings, full_embeddings,go_token, eos_token,
-				num_layers=num_layers,rnn_size=rnn_size,attn_size=attn_size,output_layer=output_layer, learning_rate=learning_rate, beam_width=beam_width, infer=infer)
+		Seq2Seq.__init__(self, full_embeddings, full_embeddings, go_token, eos_token, config,
+				output_layer=output_layer, infer=infer)
 
 		#This is a variable, rather than a computation, so it should be kept if we ever, say, want to train a model, query, later come back and train more . . .
 		self._train_affect = tf.placeholder_with_default(False, shape=())
 
+		print(config.gradient_clip_value)
 		if not infer:
 			emot_embeddings = full_embeddings[:, -3: ]
 			neutral_vector = tf.constant([5.0, 1.0, 5.0], dtype=tf.float32)
@@ -280,7 +278,7 @@ class VADAppended(Seq2Seq):
 			self._train_cost = tf.cond(self._train_affect, true_fn= lambda: affective_loss, false_fn= lambda: self.xent)
 
 			gradients = self.optimizer.compute_gradients(self._train_cost)
-			capped_gradients = [(tf.clip_by_value(grad, -5., 5.), var) for grad, var in gradients if grad is not None]
+			capped_gradients = [(tf.clip_by_value(grad, -config.gradient_clip_value, config.gradient_clip_value), var) for grad, var in gradients if grad is not None]
 			self._train_op = self.optimizer.apply_gradients(capped_gradients)
 		else:
 			self._train_cost = None

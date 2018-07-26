@@ -2,9 +2,23 @@ import tensorflow as tf
 import time
 import sys
 
-#TODO: Move functions like batch_feeds to a module separate from training and query
+#TODO: Move functions like batch_feeds to a module separate from training and inference
 from training import batch_feeds 
 from training import merge_dicts
+
+def beam_frame(beams):
+	"""
+	:param list(list(str)) beams: Set of beams for each prompt
+
+	:returns Dataframe of the beams with columns \"beams_0\", \"beams_1\", . . . \"beams_{beam_width - 1}\"
+	:rtype pd.DataFrame
+	"""
+	out_frame = pd.DataFrame()
+	beam_width = len(beams[0])
+	for i in range(beam_width):
+		beam_col_i = [beam_set[i] for beam_set in beams]
+		out_frame["beams_{}".format(i)] = beam_col_i
+	return out_frame
 
 def infer(sess, model, prompts_int, feeds, fetches, pad_int, batch_size=64):
 	"""
