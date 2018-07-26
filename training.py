@@ -141,15 +141,13 @@ def training_loop(sess, model, trainer, data, train_feeds=None, valid_feeds=None
 	:param tf.Session                                      sess: The TensorFlow session with which to run model's operations
 	:param models.Seq2Seq                                 model: The model representing the computations to be performed
 	:param Trainer                                      trainer: The Trainer, which controls the flow of training
-	:param data.Data                                       data: Data object with members **train_prompts**, **train_answers**, **valid_prompts**, **valid_answers**, **pad_int**
+	:param data.Data                                       data: Data object with members **train_prompts**, **train_answers**, **valid_prompts**, **valid_answers**
 	:param dict(tf.Tensor, object)                  train_feeds: Feed-dict when training
 	:param dict(tf.Tensor, object)                  valid_feeds: Feed-dict when running validation
 	:param int                                 train_batch_size: Minibatch size during training
 	:param int                                 valid_batch_size: Minibatch size during validation
 	:param int                     min_epochs_before_validation: Minimum number of epochs to perform before doing validation as well
 
-
-	FIXME: *data* will not need to have a member *pad_int* once we verify that we can simply zero-pad the sequences
 	"""
 
 	data_placeholders = model.data_placeholders
@@ -157,7 +155,10 @@ def training_loop(sess, model, trainer, data, train_feeds=None, valid_feeds=None
 	#Data
 	(train_prompts_int, train_answers_int) = (data.train_prompts.indices, data.train_answers.indices)
 	(valid_prompts_int, valid_answers_int) = (data.valid_prompts.indices, data.valid_answers.indices)
-	pad_int = data.pad_int
+
+	#We could rewrite the padding functions to just pad with zeros, but parameterizing them
+	# with pad_int allows for future change
+	pad_int = 0 
 	
 	#Logging
 	num_tokens = lambda feed_dict: sum(feed_dict[data_placeholders.target_lengths])
