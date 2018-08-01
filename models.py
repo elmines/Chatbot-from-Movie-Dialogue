@@ -1,16 +1,13 @@
+"""
+The various sequence-to-sequence models
+"""
+
 import tensorflow as tf
-import collections
 
 #Local modules
 import tf_collections
 import loss_functions
 import metrics
-
-#FIXME
-def write_vars(path, variables):
-	with open(path, "w", encoding="utf-8") as out:
-		for var in variables:
-			out.write("{}\n".format(var))	
 
 def _create_placeholders():
 	"""
@@ -51,7 +48,7 @@ def _beam_search_decoder(enc_state, enc_outputs, dec_embed_input, dec_embeddings
 
 	:param tf.Tensor                   enc_state: The final state of the encoder
 	:param tf.Tensor                 enc_outputs: The outputs of the encoder to attend over
-	:param                        dec_embeddings: The word embeddings used for decoding
+	:param matrix-like            dec_embeddings: The word embeddings used for decoding
 	:param tf.contrib.rnn.RNNCell       dec_cell: The cell to be used for decoding
 	:param int                         attn_size: The size of the attention mechanism
 	:param tf.layers.Layer          output_layer: TensorFlow layer applied to the decoder output
@@ -60,11 +57,12 @@ def _beam_search_decoder(enc_state, enc_outputs, dec_embed_input, dec_embeddings
 	:param int                          go_token: id for the token fed into the first decoder cell
 	:param int                         eos_token: End-Of-Sequence token that tells the decoder to stop decoding
 	:param int                        beam_width: The number of beams to generate during inference (beam_width=1 performs greedy decoding)
-	:param boolean                         infer: Whether training or inference is being performed
+	:param bool                            infer: Whether training or inference is being performed
 
 	:returns Either the training logits or the inferred beams, depending on `infer`
 	:rtype tf.Tensor
 	"""
+
 	batch_size = tf.shape(source_lengths)[0]
 	init_dec_state_size = batch_size
 	if infer:
@@ -109,12 +107,13 @@ class Seq2Seq(object):
 
 	def __init__(self, enc_embeddings, dec_embeddings, go_token, eos_token, config, output_layer=None, infer=False):
 		"""
-		:param enc_embeddings: Word embeddings for encoder
-		:param dec_embeddings: Word embeddings for decoder
-		:param int go_token: id for the token fed into the first decoder cell
-		:param int eos_token: End-Of-Sequence token that tells the decoder to stop decoding
-		:param tf.layers.Layer output_layer: TensorFlow layer applied to the decoder output
-		:param boolean infer: Whether inference or training is being performed
+		:param matrix-like   enc_embeddings: Word embeddings for encoder
+		:param matrix-like   dec_embeddings: Word embeddings for decoder
+		:param int                 go_token: id for the token fed into the first decoder cell
+		:param int                eos_token: End-Of-Sequence token that tells the decoder to stop decoding
+		:param config.Config         config: Settings for the model
+		:param tf.layers.Layer output_layer: TensorFlow layer applied to the decoder output at each time step
+		:param bool                   infer: Whether inference or training is being performed
 		"""
 
 		self._data_placeholders = _create_placeholders()
@@ -165,74 +164,132 @@ class Seq2Seq(object):
 
 	@property
 	def train_op(self):
+		"""
+		tf.Operation: The operation to be passed to sess.run to update weights
+		"""
 		raise NotImplementedError("Abstract method")
 
 	@property
 	def train_cost(self):
+		"""
+		tf.Tensor: The training cost to be fetched
+		"""
 		raise NotImplementedError("Abstract method")
 
 	@property
 	def valid_cost(self):
+		"""
+		tf.Tensor: The validation cost to be fetched
+		"""
 		raise NotImplementedError("Abstract method")
 
 	@property
 	def xent(self):
+		"""
+		tf.Tensor: The cross-entropy loss between the training logits and the targets
+		"""	
 		return self._xent
 
 	@property
 	def perplexity(self):
+		"""
+		tf.Tensor: The perplexity loss between the training logits and the targets
+		"""
 		return self._perplexity
 
 	@property
 	def eval_mask(self):
+		"""
+		tf.Tensor: Mask of size [batch_size, max_target_sequence_length]
+		This is used to mask losses during training. For instance, with
+		a batch size of 4 and target sequence lengths of [2, 1, 4, 3],
+		eval_mask's fetched value would be as follows:
+
+		[ [1, 1, 0, 0],
+		  [1, 0, 0, 0],
+		  [1, 1, 1, 1],
+		  [1, 1, 1, 0]
+		]
+		"""
 		return self._eval_mask
 
 	@property
 	def keep_prob(self):
+		"""
+		tf.Tensor: A placeholder variable that must be fed a specific keep probability.
+		That is, to have a dropout of 0.25, one feeds 0.75 to keep_prob
+		"""
 		return self._keep_prob
 
 	@property
 	def data_placeholders(self):
+		"""
+		tf_collections.DataPlaceholders: The 4 placeholders for the model (input_data, targets, source_lengths, target_lengths)
+		"""
 		return self._data_placeholders
 
 	@property
 	def targets(self):
+		"""
+		tf.Tensor: The targets placeholder variable
+		Should be fed an integer Tensor of dimensionality [batch_size, max_target_length]
+		"""
 		return self._targets
 
 	@property
 	def source_lengths(self):
+		"""
+		tf.Tensor: The placeholders variable for the lengths of input_data
+		Should be fed an integer Tensor of dimensionality [batch_size]
+		"""
 		return self._source_lengths
 
 	@property
 	def target_lengths(self):
+		"""
+		tf.Tensor: The placeholders variable for the lengths of input_data
+		"""
 		return self._target_lengths
 
 	@property
 	def train_logits(self):
+		"""
+		tf.Tensor: Logits produced during training, of dimensionality [batch_size, max_target_length, num_categories]
 		return self._train_logits
+		"""
 
 	@property
 	def beams(self):
-		"""The inferred beams of dimensions [batch_size, max_time_step, beam_width]"""
+		"""
+		tf.Tensor: The inferred beams of dimensions [batch_size, max_time_step, beam_width]
+		"""
 		return self._beams
 
 	@property
 	def beam_width(self):
+		"""
+		int: The number of beams produced during inference.
+		"""
 		return self._beam_width
 
 	@property
-	def optimizer(self):
-	        return self._optimizer
-	
-	@property
 	def enc_embed_input(self):
+		"""
+		matrix_like: The embedding matrix for input_data
+		"""
 		return self._enc_embed_input
 	@property
 	def dec_embed_input(self):
+		"""
+		matrix_like: The embedding matrix for targets
+		"""
 		return self._dec_embed_input
 
 class Aff2Vec(Seq2Seq):
 	def __init__(self, **kwargs):
+		"""
+		Utilizes the same parameters as :py:class:`models.Seq2Seq`
+		"""
 		super(Aff2Vec, self).__init__(**(kwargs))
 
 		config = kwargs["config"]
@@ -246,14 +303,23 @@ class Aff2Vec(Seq2Seq):
 			self._train_op = None
 	@property
 	def train_cost(self):
+		"""
+		tf.Tensor: The training cost to be fetched
+		"""
 		return self.xent
 
 	@property
 	def valid_cost(self):
+		"""
+		tf.Tensor: The validation cost to be fetched
+		"""
 		return self.perplexity
 
 	@property
 	def train_op(self):
+		"""
+		tf.Operation: The operation to be passed to sess.run to update weights
+		"""
 		return self._train_op
 
 class VADAppended(Seq2Seq):
@@ -261,7 +327,13 @@ class VADAppended(Seq2Seq):
 	def __init__(self, full_embeddings, go_token, eos_token, config, output_layer=None,
 		keep_prob = 1, infer=False, affect_strength=0.5):
 		"""
-		affect_strength - hyperparameter in the range [0.0, 1.0)
+		:param matrix-like     full_embeddings: Word embeddings, with the VAD values as the last 3 dimensions
+		:param int                    go_token: id for the token fed into the first decoder cell
+		:param int                   eos_token: End-Of-Sequence token that tells the decoder to stop decoding
+		:param config.Config            config: Settings for the model
+		:param tf.layers.Layer    output_layer: TensorFlow layer applied to the decoder output at each time step
+		:param bool                      infer: Whether inference or training is being performed
+		:param float           affect_strength: hyperparameter in the range [0.0, 1.0)
 		"""
 		
 		Seq2Seq.__init__(self, full_embeddings, full_embeddings, go_token, eos_token, config,
@@ -286,16 +358,29 @@ class VADAppended(Seq2Seq):
 
 	@property
 	def train_affect(self):
-	        return self._train_affect
+		"""
+		tf.Tensor: Boolean placeholder variable determining whether to use an affective loss function or standard cross-entropy
+		"""
+		return self._train_affect
 	
 	@property
 	def train_cost(self):
+		"""
+		tf.Tensor: The training cost to be fetched
+		Depending on the value feeded into train_affect, could be either affective loss or standard cross-entropy
+		"""
 		return self._train_cost
 
 	@property
 	def valid_cost(self):
+		"""
+		tf.Tensor: The validation cost to be fetched
+		"""
 		return self.perplexity
 	
 	@property
 	def train_op(self):
+		"""
+		tf.Operation: The operation to be passed to sess.run to update weights
+		"""
 		return self._train_op
