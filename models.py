@@ -13,8 +13,8 @@ def _create_placeholders():
 	"""
 	Creates tf.placeholder objects for representing the source and target data.
 
-	:return The placeholder varibles
-	:rtype tf_collections.DataPlaceholders
+	:return: The placeholder varibles
+	:rtype: tf_collections.DataPlaceholders
 	"""
 
 	#                                          batch_size  time
@@ -59,8 +59,8 @@ def _beam_search_decoder(enc_state, enc_outputs, dec_embed_input, dec_embeddings
 	:param int                        beam_width: The number of beams to generate during inference (beam_width=1 performs greedy decoding)
 	:param bool                            infer: Whether training or inference is being performed
 
-	:returns Either the training logits or the inferred beams, depending on `infer`
-	:rtype tf.Tensor
+	:returns: Either the training logits or the inferred beams, depending on `infer`
+	:rtype: tf.Tensor
 	"""
 
 	batch_size = tf.shape(source_lengths)[0]
@@ -205,11 +205,7 @@ class Seq2Seq(object):
 		a batch size of 4 and target sequence lengths of [2, 1, 4, 3],
 		eval_mask's fetched value would be as follows:
 
-		[ [1, 1, 0, 0],
-		  [1, 0, 0, 0],
-		  [1, 1, 1, 1],
-		  [1, 1, 1, 0]
-		]
+		[ [1, 1, 0, 0], [1, 0, 0, 0], [1, 1, 1, 1], [1, 1, 1, 0] ]
 		"""
 		return self._eval_mask
 
@@ -286,6 +282,9 @@ class Seq2Seq(object):
 		return self._dec_embed_input
 
 class Aff2Vec(Seq2Seq):
+	"""
+	Model with affective embeddings
+	"""
 	def __init__(self, **kwargs):
 		"""
 		Utilizes the same parameters as :py:class:`models.Seq2Seq`
@@ -323,7 +322,9 @@ class Aff2Vec(Seq2Seq):
 		return self._train_op
 
 class VADAppended(Seq2Seq):
-
+	"""
+	Model whose embeddings have VAD values as their last 3 dimensions
+	"""
 	def __init__(self, full_embeddings, go_token, eos_token, config, output_layer=None,
 		keep_prob = 1, infer=False, affect_strength=0.5):
 		"""

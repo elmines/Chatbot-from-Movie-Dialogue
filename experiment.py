@@ -1,3 +1,7 @@
+"""
+Module for constructing a model and either training it or inferring responses from it.
+"""
+
 #Utilities
 import sys
 import os
@@ -24,17 +28,19 @@ import config
 def var_dict(variables):
 	"""
 	:param list(tf.Variable) variables: A list of TensorFlow variables
-	:returns A dictionary mapping variable names to variable objects
-	:rtype dict(str, tf.Variable)
+
+	:returns: A dictionary mapping variable names to variable objects
+	:rtype: dict(str, tf.Variable)
 	"""
 	return {var.name:var for var in variables}
 
 def append_meta(wordVecs, verify_index=None):
 	"""
-	wordVecs - an np array of word embeddings
-	:param int verify_index: The index that should be used to represent the metatoken
-	Returns
-		(np array with the metatoken embeddings appended, the index of the metatoken embedding)
+	:param np.ndarray     wordVecs: An matrix of word embeddings
+	:param int        verify_index: The index that should be used to represent the metatoken
+
+	:returns: The word embeddings with the metatoken embeddings appended
+	:rtype: np.ndarray
 	"""
 
 	embedding_size = wordVecs.shape[1] #Dynamically determine embedding size from loaded embedding file
@@ -47,13 +53,25 @@ def append_meta(wordVecs, verify_index=None):
 
 
 def append_eos(answers_int, eos_int):
+	"""
+	:param list(list(int)) answers_int: Answer sequences
+	:param int                 eos_int: The token used to represent the end-of-sequence
+
+	:returns: The answers with the EOS token appended
+	:rtype: list(list(int))
+	"""
 	return [sequence+[eos_int] for sequence in answers_int]
 
 
 class BaseExperiment(object):
+	"""
+	Abstract class representing an experiment to be performed
+	"""
 
 	def __init__(self, config_obj, infer=False):
 		"""
+		:param config.Config config_obj: The settings for the experiment
+		:param bool               infer: Whether training or inference is being performed
 		"""
 
 		self.config = config_obj
@@ -104,14 +122,17 @@ class BaseExperiment(object):
 
 
 	def train(self):	
+		"""
+		Performs the training process given the configuration passed in
+		"""
 		raise NotImplementedError
 
 	def infer(self, prompts_text):
 		"""
 		:param list(str) prompts_text: Prompts to give the model
 
-		:returns A dataframe of the prompts, their corrresponding responses, and any other metadata the model provides.
-		:rtype pd.DataFrame
+		:returns: A dataframe of the prompts, their corrresponding responses, and any other metadata the model provides.
+		:rtype: pd.DataFrame
 		"""
 		if not self.inference:
 			raise ValueError("Can only call infer() if model is constructed in inference mode")
@@ -143,13 +164,25 @@ class BaseExperiment(object):
 		return out_frame
 
 	def save_fn(self, sess):
+		"""
+		:param tf.Session sess: The session in which the model is being trained
+
+		Saves the training and inference graphs of the model
+		"""
 		act_train_prefix = self.train_checkpoint.save(self.train_save, sess)
 		print("Saved training graph to {}".format(act_train_prefix))
 		act_infer_prefix = self.infer_checkpoint.save(self.infer_save, sess)
 		print("Saved inference graph to {}".format(act_infer_prefix))
 
 class VADExp(BaseExperiment):
+	"""
+	Experiment involving embeddings with VAD values appended to the end
+	"""
 	def __init__(self, config_obj, infer=False):
+		"""
+		:param config.Config config_obj: The settings for the experiment
+		:param          bool      infer: Whether to perform training or inference
+		"""
 		BaseExperiment.__init__(self, config_obj, infer)
 
 		full_embeddings = np.load(config_obj.embeddings).astype(np.float32)
@@ -174,6 +207,11 @@ class VADExp(BaseExperiment):
 
 
 	def train(self, train_affect=False):
+		"""
+		Performs the training process given the configuration passed in
+
+		:param bool train_affect: Whether to train using cross-entropy or affective loss
+		"""
 		if self.inference:
 			raise ValueError("Tried to train a model in inference mode.")
 		xent_epochs = self.config.max_epochs 
@@ -218,6 +256,10 @@ class DistrExp(BaseExperiment):
 	An experiment using distributed affective embeddings.
 	"""
 	def __init__(self, config_obj, infer=False):
+		"""
+		:param config.Config config_obj: The settings for the experiment
+		:param          bool      infer: Whether to perform training or inference
+		"""
 		BaseExperiment.__init__(self, config_obj, infer)
 
 
@@ -241,6 +283,9 @@ class DistrExp(BaseExperiment):
 		self.infer_checkpoint = tf.train.Checkpoint(**train_dict)
 
 	def train(self):
+		"""
+		Performs the training process given the configuration passed in
+		"""
 		if self.inference:
 			raise ValueError("Tried to train a model in inference mode.")
 		xent_epochs = self.config.max_epochs
