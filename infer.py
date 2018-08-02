@@ -1,5 +1,5 @@
 """
-Infer responses using a Seq2Seq dialog generation model.
+Script for inferring responses to human prompts using a Seq2Seq dialog generation model
 
 Usage: python infer.py config.yml
 

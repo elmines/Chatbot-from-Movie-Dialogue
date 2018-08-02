@@ -1,3 +1,6 @@
+"""
+Utility module for inferring responses from arbitrary prompts
+"""
 import tensorflow as tf
 import time
 import sys
@@ -10,8 +13,8 @@ def beam_frame(beams):
 	"""
 	:param list(list(str)) beams: Set of beams for each prompt
 
-	:returns Dataframe of the beams with columns \"beams_0\", \"beams_1\", . . . \"beams_{beam_width - 1}\"
-	:rtype pd.DataFrame
+	:returns: Dataframe of the beams with columns \"beams_0\", \"beams_1\", . . . \"beams_{beam_width - 1}\"
+	:rtype:   pd.DataFrame
 	"""
 	out_frame = pd.DataFrame()
 	beam_width = len(beams[0])
@@ -22,15 +25,18 @@ def beam_frame(beams):
 
 def infer(sess, model, prompts_int, feeds, fetches, pad_int, batch_size=64):
 	"""
-	:param tf.Session                    sess: The active TensorFlow session
-	:param models.Seq2Seq               model: The dialog generation model
-	:param list(list(int))            prompts: The prompts for which to generate replies
-	:param dict(tf.Tensor, tf.Tensor)   feeds: Additional feeds for sess.run (like dropout probability)
-	:param list(tf.Tensor)            fetches: Outputs to fetch from sess.run
+	Infers responses from the given prompts.
 
-	:returns List of outputs for each samples
-	:rtype list(type(fetches))
+	:param tf.Session                       sess: The active TensorFlow session
+	:param models.Seq2Seq                  model: The dialog generation model
+	:param list(list(int))           prompts_int: The prompts for which to generate replies
+	:param dict(tf.Tensor,tf.Tensor)       feeds: Additional feeds for sess.run (like dropout probability)
+	:param list(tf.Tensor)               fetches: Outputs to fetch from sess.run
+	:param int                           pad_int: Integer used for padding samples to equal lengths
+	:param int                        batch_size: Minibatch size
 
+	:returns: List of outputs for each sample; the type of a list elemement depends on the fetches given
+	:rtype: list(type(fetches))
 	"""
 
 	data_placeholders = model.data_placeholders 
@@ -55,11 +61,17 @@ def infer(sess, model, prompts_int, feeds, fetches, pad_int, batch_size=64):
 
 def show_response(prompt_int, beams, prompts_int_to_vocab, answers_int_to_vocab, pad_q, pad_a, answer_int = None):
 	"""
-	Display the model's response
+	Displays an inferred response to a prompt
 
-	:param prompt_int: A 1-D iterable of integers
-	:param beams: Response beams as a 2-D iterable or a single response as a 1-D iterable
+	:param list(int)                prompt_int: A 1-D iterable of integers
+	:param iterable                      beams: Response beams as a 2-D iterable or a single response as a 1-D iterable
+	:param dict(int,str)  prompts_int_to_vocab: A mapping from integer indices to their corresponding tokens in the source vocabulary
+	:param dict(int,str)  answers_int_to_vocab: A mapping from integer indices to their corresponding tokens in the target vocabulary
+	:param int                           pad_q: Token that was used to pad the prompts
+	:param int                           pad_a: Token that was used to pad the answers
+	:param list(int)                answer_int: The proper, \"correct\" answer (if available) that can be displayed
 	"""
+
 	prompt_text = [prompts_int_to_vocab[tok] for tok in prompt_int if tok != pad_q]
 	print("Prompt")
 	print("  Word Ids: {}".format([i for i in prompt_int if i != pad_q]))

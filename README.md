@@ -4,13 +4,17 @@ A chatbot for emotional dialog generation built in TensorFlow 1.9 and modeled af
 ## Usage
 Check out [examples](examples/) to see how to train a model and then perform inference with it after training. The project's two "main" scripts are [train.py](train.py) and [infer.py](infer.py).
 
+To generate some more expansive documentation, simply run [gen\_doc.sh](gen_doc.sh).
+
 ## Dependencies
 - Python 3
 - [tensorflow](https://pypi.org/project/tensorflow/) 1.9
 - [gensim](https://pypi.org/project/gensim/) (for training Word2Vec embeddings)
-- [pandas](https://pypi.org/project/pandas/)
+- [PyYAML](https://pypi.org/project/PyYAML/) (for configuring a model)
+- [numpy](https://pypi.org/project/numpy/)
+- [pandas](https://pypi.org/project/pandas/) (for spreadsheet processing)
   - [xlrd](https://pypi.org/project/xlrd/) 
-- [spacy](https://pypi.org/project/spacy/) (for preprocessing submodule)
+- [spacy](https://pypi.org/project/spacy/) (for preprocessing package)
   - [en\_core\_web\_sm](https://spacy.io/usage/models) language model
-- [matplotlib](https://pypi.org/project/matplotlib/) (for analysis submodule)
+- [matplotlib](https://pypi.org/project/matplotlib/) (for analysis package)
 - [sphinx](https://pypi.org/project/Sphinx/) 1.7.6 or higher (for generating documentation)

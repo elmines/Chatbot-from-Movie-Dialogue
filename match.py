@@ -1,8 +1,20 @@
+"""
+Module for mapping tokens of one vocabulary to tokens of another
+"""
 import sys
 import spacy
 
 nlp = spacy.load("en_core_web_sm")
 def lemmatize(token):
+	"""
+	Lemmatizes a token (or identifies it as a pronoun and returns None)
+
+	:param str token: The token to lemmatize
+
+	:returns: The token's lemma or `None`
+	:rtype: str or None
+	"""
+
 	lemma = str( nlp(token)[0].lemma_ )
 	if lemma != "-PRON-":
 		return lemma
@@ -11,11 +23,12 @@ def lemmatize(token):
 
 def vocab_match(prop_vocab, targ_vocab, verbose=False):
 	"""
-	prop_vocab - Our \"proposed\" vocabulary of words we want to map to match_vocab
-	targ_vocab - The vocab to which we're matching
+	:param list(str) prop_vocab: Our \"proposed\" vocabulary of words we want to map to targ_vocab
+	:param list(str) targ_vocab: The vocab to which we're matching
+	:param bool         verbose: Print helpful messages to stderr
 	
-	Returns
-		A dictionary object mapping every word in prop_vocab to either a word in match_vocab or None
+	:returns: A mapping from every word in prop_vocab to either a word in targ_vocab or None
+	:rtype: dict(str,str or None)
 	"""
 	
 	list_neutral = []

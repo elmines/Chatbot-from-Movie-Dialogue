@@ -1,14 +1,27 @@
+"""
+Utility module for generating word embeddings
+"""
 import gensim
 import numpy as np
 import pandas as pd
 
 import sys
-import os
 
 #Local modules
 import match
 
 def w2vec(model_path, text, vocab2int, embedding_size=1024, verbose=True):
+	"""
+	Generates Word2Vec embeddings
+
+	:param path-like       model_path: The path at which to save the embeddings before returning
+	:param list(list(str))       text: The tokens from which to generate the embeddings, where text[i][j] is the jth token of the ith sequence
+	:param dict(str,int)    vocab2int: A mapping from tokens in the vocabulary to their integer indices
+	:param bool               verbose: Print helpful messages to stderr
+	
+	:returns: The generated embeddings
+	:rtype:   np.ndarray
+	"""
 	if verbose: sys.stderr.write("Learning Word2Vec embeddings on {} sequences . . .\n".format(len(text)))
 	model = gensim.models.Word2Vec(sentences=text, size=embedding_size, window=5, min_count=1, workers=4, sg=0)
 	word_vecs = np.zeros((len(model.wv.vocab),embedding_size))
@@ -22,6 +35,18 @@ def w2vec(model_path, text, vocab2int, embedding_size=1024, verbose=True):
 
 
 def appended_vad(model_path, embeddings, vocab2int, exclude=None, verbose=True):
+	"""
+	Appends VAD (Valence, Arousal, Dominance) values to existing word embeddings
+
+	:param path-like       model_path: The path at which to save the new embeddings before returning
+	:param np.ndarray      embeddings: The original embeddings
+	:param dict(str,int)    vocab2int: A mapping from tokens in the vocabulary to their integer indices
+	:param list(str)          exclude: A list of tokens in vocab2int for which to assign the neutral vector (such as the unknown token)
+	:param bool               verbose: Print helpful messages to stderr
+	
+	:returns: The generated embeddings
+	:rtype:   np.ndarray
+	"""
 	#Simple list of vocabulary items at their proper indices
 	int2vocab = sorted(vocab2int.keys(), key=vocab2int.__getitem__)
 
@@ -66,6 +91,22 @@ def appended_vad(model_path, embeddings, vocab2int, exclude=None, verbose=True):
 
 
 def aff2vec(model_path, vocab2int, aff_embeddings_path="./w2_counterfit_append_affect.bin", exclude=None, verbose=True):
+	"""
+	Extracts Aff2Vec embeddings for an arbitary vocabulary from an existing word embeddings .bin file
+
+	For words in the vocabulary but not the .bin file, the function creates a \"neutral embedding\" which is simply the average of all the embedding
+	vectors assigned for words that were found.
+
+	:param path-like               model_path: The path at which to save the new embeddings before returning
+	:param dict(str,int)            vocab2int: A mapping from tokens in the vocabulary to their integer indices
+	:param path-like      aff_embeddings_path: Path to a .bin gensim file
+	:param list(str)                  exclude: A list of tokens in vocab2int for which to assign the neutral vector (such as the unknown token)
+	:param bool                       verbose: Print helpful messages to stderr
+	
+	:returns: The extracted embeddings
+	:rtype:   np.ndarray
+	"""
+
 	#Simple list of vocabulary items at their proper indices
 	#FIXME: Assumes the lowest index is indeed 0. Bad?
 	int2vocab = sorted(vocab2int.keys(), key=vocab2int.__getitem__)
@@ -106,20 +147,4 @@ def aff2vec(model_path, vocab2int, aff_embeddings_path="./w2_counterfit_append_a
 		sys.stderr.write("{}/{} words assigned emotional embeddings.\n".format(len(assign_emot), len(vocab2int)))
 		sys.stderr.write("{}/{} words assigned the neutral vector.\n".format(len(assign_neutral), len(vocab2int)))
 
-
-	"""
-	print("Neutral vector: ", neut_embedding)
-	index = 26
-	summation = 0
-	for i in assign_emot:
-		summation += word_vecs_emot[i][index]
-	average = summation / len(assign_emot)
-	for j in assign_neutral:
-		a = average
-		b = word_vecs_emot[j][index]
-		assert abs(a - b) < 0.0001
-		print("Assertion passed!: {} == {}".format(a, b))
-	"""
-
 	return word_vecs_emot
-

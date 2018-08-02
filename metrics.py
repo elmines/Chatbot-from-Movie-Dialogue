@@ -1,13 +1,17 @@
+"""
+Metrics for measuring the accuracy of a chatbot's/MT model's predictions
+"""
 import tensorflow as tf
 import nltk
 import numpy as np
 
 def perplexity(logits = None, labels = None):
 	"""
-	`labels` - the ground truth target values: Tensor of dimensinos [batch_size*max_time_step]
-	`logits` - the predictions of dimensions [batch_size*max_time_step, num_output_classes]
-	Returns
-		losses - the loss of dimension [batch_size*max_time_step]
+	:param tf.Tensor logits: The predicted logits of dimensions [batch_size*max_time_step, num_output_classes]
+	:param tf.Tensor labels: The target labels of dimensions [batch_size*max_time_step]
+
+	:returns: Losses of dimension [batch_size*max_time_step]
+	:rtype:   tf.Tensor
 	"""
 	return tf.exp( tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels))
 
@@ -16,8 +20,12 @@ def bleu(references, hypotheses, average_across_batch=True):
 	"""
 	Compute BLEU-4
 
-	`references` - a list of list of strings, where each string is a token of a reference translation
-	`hypotheses` - a list of list of strings, where each string is a token of a hypothesis translation
+	:param list(list(str))           references: The references (i.e. target labels) where references[i][j] is the jth token of the ith reference
+	:param list(list(str))           hypotheses: The hypothesized translations/responses where hypotheses[i][j] is the jth token of the ith hypothesis
+	:param bool            average_across_batch: Whether to average the BLEU scores across samples
+
+	:returns: A numpy vector of BLEU scores if not averaging, a scalar BLEU score otherwise
+	:rtype: np.ndarray or float
 	"""
 	#Note the extra bracketes around references[i] - BLEU lets you give a list of reference translations
 	losses = 100. * np.array(
@@ -35,8 +43,12 @@ def bleu(references, hypotheses, average_across_batch=True):
 
 def batch_word_error_rate(references, hypotheses, average_across_batch=True):
 	"""
-	`references` - list of list of strings where each string is a token of a reference translation
-	`hypotheses` - list of list of strings where each string is a token of a hypothesis translation
+	:param list(list(str))           references: The correct reference sequence
+	:param list(list(str))           hypotheses: The hypothesized sequence
+	:param bool            average_across_batch: Whether to average the BLEU scores across samples
+
+	:returns: A numpy vector of word error rates if not averaging, a scalar word error rate otherwise
+	:rtype: np.ndarray or float
 	"""
 	losses = np.array([word_error_rate(references[i], hypotheses[i]) for i in range(len(references))], dtype=np.float32 )
 
@@ -46,10 +58,11 @@ def batch_word_error_rate(references, hypotheses, average_across_batch=True):
 
 def word_error_rate(reference, hypothesis):
 	"""
-	reference - list of strings where each string is a token
-	hypothesis - list of strings where each string is a token
+	:param list(str)  reference: The correct reference sequence
+	:param list(str) hypothesis: The hypothesized sequence
 
-	Returns word error rate(insert, delete or substitution).
+	:returns: The word error rate
+	:rtype: float
 	"""
 
 	distance = np.zeros((len(reference) + 1) * (len(hypothesis) + 1), dtype=np.uint16)

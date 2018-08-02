@@ -11,5 +11,5 @@ echo "Changing into doc/ directory . . ."
 cd doc
 
 make html
-echo "More specifically, the go to doc/_build/html/index.html for the documentation"
+echo "More specifically, go to doc/_build/html/index.html for the documentation"
 cd ..

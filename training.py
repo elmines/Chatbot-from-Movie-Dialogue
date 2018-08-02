@@ -1,10 +1,24 @@
+"""
+Module for training a :py:class:`models.Seq2Seq` model
+"""
 import tensorflow as tf
 import numpy as np
 import sys
 import time
 
-#This function runs in quadratic time and was not meant for scalability
 def merge_dicts(*dicts):
+	"""
+	Merges two dictionaries with disjoint sets of keys
+
+	Becasuse it checks for identical keys, this function runs in time quadratic with the number of keys and was never meant for scalability.
+
+	:param list(dict) dicts: One or more dictionaries to merge
+
+	:raises ValueError: if a key is found in more than one dictionary
+
+	:returns: The combined dictionary
+	:rtype: dict
+	"""
 	merged = {}
 	for dictionary in dicts:
 		for key in dictionary:
@@ -16,19 +30,49 @@ def merge_dicts(*dicts):
 
 ############FEEDDING DATA################
 def parallel_shuffle(source_sequences, target_sequences):
-    if len(source_sequences) != len(target_sequences):
-        raise ValueError("Cannot shuffle parallel sets with different numbers of sequences")
-    indices = np.random.permutation(len(source_sequences))
-    shuffled_source = [source_sequences[indices[i]] for i in indices]
-    shuffled_target = [target_sequences[indices[i]] for i in indices]
-    
-    return (shuffled_source, shuffled_target)
+	"""
+	:param list source_sequences: A list of input sequences
+	:param list target_sequences: A list of parallel target sequences
+
+	:raises ValueError: if there are different numbers of source and target sequences
+
+	:returns: The shuffled sequences (without affecting the originals)
+	:rtype: tuple(list,list)
+	"""
+
+	if len(source_sequences) != len(target_sequences):
+		raise ValueError("Cannot shuffle parallel sets with different numbers of sequences")
+	indices = np.random.permutation(len(source_sequences))
+	shuffled_source = [source_sequences[indices[i]] for i in indices]
+	shuffled_target = [target_sequences[indices[i]] for i in indices]
+
+	return (shuffled_source, shuffled_target)
 def pad_sentence_batch(sentence_batch, pad_token):
-    """Pad sentences with <PAD> so that each sentence of a batch has the same length"""
-    max_sentence_length = max([len(sentence) for sentence in sentence_batch])
-    return [sentence + [pad_token] * (max_sentence_length - len(sentence)) for sentence in sentence_batch]
+	"""
+	Pads sequences to equal lengths
+
+	:param list(list) sentence_batch: The sequences to be padded
+	:param                 pad_token: The token with which to pad the sequences
+
+	:returns: The padded sequences
+	:rtype: list(list)
+	"""
+
+	max_sentence_length = max([len(sentence) for sentence in sentence_batch])
+	return [sentence + [pad_token] * (max_sentence_length - len(sentence)) for sentence in sentence_batch]
 
 def single_batch(data_placeholders, questions_batch, answers_batch, pad_token):
+	"""
+	Maps TensorFlow placeholder variables to a batch of training data
+
+	:param tf_collections.DataPlaceholders   data_placeholders: The placeholders for which to feed data
+	:param list(list(int))                     questions_batch: A batch of prompts
+	:param list(list(int))                       answers_batch: A batch of responses
+	:param int                                       pad_token: The token with which to pad sequences to equal lengths
+
+	:returns: A feed dictionary mapping the placeholders in data_placeholders to the data for one batch
+	:rtype: dict(tf.Tensor,object)
+	"""
 	source_lengths = np.array( [len(sentence) for sentence in questions_batch] )
 	target_lengths = np.array( [len(sentence) for sentence in answers_batch])
 
@@ -46,10 +90,16 @@ def single_batch(data_placeholders, questions_batch, answers_batch, pad_token):
 
 def batch_feeds(data_placeholders, questions_int, answers_int, batch_size, pad_token):
 	"""
-	data_placeholders - a tf_collections.DataPlaceholders object
+	Batches training data and returns a mapping from TensorFlow placeholder variables to the data
 
-	Returns
-		a feed dictionary with mapping data_placeholders to a batch
+	:param tf_collections.DataPlaceholders data_placeholders: The placeholders for which to feed data
+	:param list(list(int))                     questions_int: The prompts to be batched
+	:param list(list(int))                       answers_int: The corresponding responses to be batched
+	:param int                                    batch_size: The minibatch size
+	:param int                                     pad_token: The token with which to pad sequences to equal lengths
+
+	:returns: An iterator of feed dictionaries mapping the placheholders in data_placeholders to the data for one batch
+	:rtype: Iterator(dict(tf.Tensor,object))
 	"""
 	for batch_i in range(0, len(questions_int)//batch_size):
 		start_i = batch_i * batch_size
@@ -66,17 +116,16 @@ def batch_feeds(data_placeholders, questions_int, answers_int, batch_size, pad_t
 #TODO: Add support for logging
 class Trainer(object):
 	"""
-	Class describing the state of a models.Seq2Seq's training
+	Class maintaining the state of training for a :py:class:`models.Seq2Seq` model
 	"""
 	def __init__(self, save_fn, epochs_completed=0, max_epochs=50, best_valid_cost = float("inf"), stalled_steps = 0, max_stalled_steps=float("inf")):
 		"""
-		:param          latest_model_path: Path at which to save the latest model
-		:param callable           save_fn: A function with signature save_fn(tf.Session)
-		:param int       epochs_completed: Epochs of training already completed
-		:param int             max_epochs: Total epochs to complete
-		:param float      best_valid_cost: Best validation loss observed thus far
-		:param int          stalled_steps: The number of consecutive stalled validation steps
-		:param int      max_stalled_steps: The maximum number of stalled steps before stopping training early
+		:param callable            save_fn: A function with signature save_fn(tf.Session)
+		:param int        epochs_completed: Epochs of training already completed
+		:param int              max_epochs: Total epochs to complete
+		:param float       best_valid_cost: Best validation loss observed thus far
+		:param int           stalled_steps: The number of consecutive stalled validation steps
+		:param int       max_stalled_steps: The maximum number of stalled steps before stopping training early
 		"""
 
 		if not callable(save_fn):
@@ -88,13 +137,22 @@ class Trainer(object):
 		self._max_stalled_steps = max_stalled_steps
 		self._record = best_valid_cost
 
-
-		
 	def save_latest(self, sess):
+		"""
+		Saves the current state of the model and prints the number of epochs completed
+
+		:param tf.Session sess: The TensorFlow session in which to save the model
+		"""
 		self.save_fn(sess)
 		print("{}/{} epochs completed".format(self.epochs_completed, self.max_epochs))
 
 	def check_validation_loss(self, sess, validation_cost):
+		"""
+		Checks the validation loss against the current record, and saves the model if a new record has been reached
+
+		:param tf.Session            sess: The TensorFlow session in which to save the model
+		:param float      validation_cost: The latest validation loss
+		"""
 		if not( validation_cost >= self._record ):
 			self._stalled_steps = 0
 			self._record = validation_cost
@@ -105,45 +163,71 @@ class Trainer(object):
 			print("No new record for validation cost--stalled for {}/{} steps".format(self._stalled_steps, self._max_stalled_steps))
 
 	def inc_epochs_completed(self):
+		"""
+		Increments the number of epochs completed
+		"""
 		self._epochs_completed += 1
 
 	@property
 	def save_fn(self):
+		"""
+		callable: The function used to save the current model
+		"""
 		return self._save_fn
 
 	@property
 	def finished(self):
+		"""
+		bool: Whether training is completed (based on the number of epochs completed and the number of stalled steps)
+		"""
 		return (self.epochs_completed >= self.max_epochs) or (self.stalled_steps >= self.max_stalled_steps)
 
 	@property
 	def epochs_completed(self):
+		"""
+		int: The number of epochs of training completed
+		"""
 		return self._epochs_completed
 
 	@property
 	def max_epochs(self):
+		"""
+		int: The maximum number of epochs for which to train
+		"""
 		return self._max_epochs
 
 	@property
 	def stalled_steps(self):
+		"""
+		int: The current number of consecutive stalled steps
+		"""
 		return self._stalled_steps
 
 	@property
 	def max_stalled_steps(self):
+		"""
+		int: The maximum number of stalled steps to tolerate before ending training
+		"""
 		return self._max_stalled_steps
 
 	@property
 	def best_valid_cost(self):
+		"""
+		float: The best validation loss recorded thus far
+		"""
 		return self._record
 		
 
 def training_loop(sess, model, trainer, data, train_feeds=None, valid_feeds=None, train_batch_size=64, valid_batch_size=64, min_epochs_before_validation=2):
 	"""
+	Trains a :py:class:`models.Seq2Seq` model
+
 	:param tf.Session                                      sess: The TensorFlow session with which to run model's operations
 	:param models.Seq2Seq                                 model: The model representing the computations to be performed
 	:param Trainer                                      trainer: The Trainer, which controls the flow of training
 	:param data.Data                                       data: Data object with members **train_prompts**, **train_answers**, **valid_prompts**, **valid_answers**
-	:param dict(tf.Tensor, object)                  train_feeds: Feed-dict when training
-	:param dict(tf.Tensor, object)                  valid_feeds: Feed-dict when running validation
+	:param dict(tf.Tensor,object)                   train_feeds: Feed-dict when training
+	:param dict(tf.Tensor,object)                   valid_feeds: Feed-dict when running validation
 	:param int                                 train_batch_size: Minibatch size during training
 	:param int                                 valid_batch_size: Minibatch size during validation
 	:param int                     min_epochs_before_validation: Minimum number of epochs to perform before doing validation as well

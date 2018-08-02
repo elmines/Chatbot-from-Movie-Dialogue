@@ -1,5 +1,5 @@
 """
-Train a Seq2Seq dialog generation model.
+Script for training a Seq2Seq dialog generation model
 
 Usage: python train.py config.yml
 

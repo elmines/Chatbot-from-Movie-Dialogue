@@ -5,8 +5,8 @@ def read_tokens(path):
 	"""
 	:param path-like path: Path to file containing newline-separated sequences
 
-	:returns The file's text, with each entry one of the sequences
-	:rtype list(str)
+	:returns: The file's text, with each entry one of the sequences
+	:rtype: list(str)
 	"""
 	with open(path, "r", encoding="utf-8") as r:
 		text = [ [token for token in line.strip().split(" ")] for line in r.readlines()]
