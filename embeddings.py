@@ -5,6 +5,7 @@ Utility module/script for generating word embeddings
 import sys
 import os
 import argparse
+from copy import deepcopy
 
 #Computation
 import gensim
@@ -24,9 +25,8 @@ def create_parser():
 	parser.add_argument("--size", default=1024, type=int, metavar="N", help="Embedding size for Word2Vec embeddings")
 	parser.add_argument("--w2v", metavar="corpus.txt", help="Generate Word2Vec embeddings from the corpus")
 
-	parser.add_argument("--retrofit", metavar="embeddings.npy", help="Retrofit existing word embeddings stored in a .npy or .npz file")
+	parser.add_argument("--retrofit", nargs=2, metavar=("embeddings.npy", "lexicon.txt"), help="Retrofit existing word embeddings stored in a Numpy file using Faruqui et al.-style lexicon")
 	parser.add_argument("--counterfit", metavar="embeddings.npy", help="Counterfit existing word embeddings stored in a .npy or .npz file")
-
 
 	return parser
 
@@ -48,7 +48,8 @@ def w2vec(text, vocab2int, embedding_size=1024, verbose=True):
 	"""
 	if verbose: sys.stderr.write("Learning Word2Vec embeddings on {} sequences . . .\n".format(len(text)))
 	model = gensim.models.Word2Vec(sentences=text, size=embedding_size, window=5, min_count=1, workers=4, sg=0)
-	word_vecs = np.zeros((len(model.wv.vocab),embedding_size))
+
+	word_vecs = np.zeros( (len(vocab2int),embedding_size) )
 	for (word, index) in vocab2int.items():
 		word_vecs[index] = model[word]
 	return word_vecs
@@ -165,9 +166,88 @@ def aff2vec(model_path, vocab2int, aff_embeddings_path="./w2_counterfit_append_a
 
 	return word_vecs_emot
 
+def read_lexicon(filename):
+	"""
+	Read in a lexicon of the format used by Faruqui et al. at https://github.com/mfaruqui/retrofitting
+
+	That is, each line consists of the keyword, followed by its corresponding words in the lexicon,
+	all delimited by spaces. For example, the following line contains \"newspaper\" and two synonyms:
+
+	newspaper journal tribune
+
+	:param path-like filename: The lexicon file to be read
+
+	:returns: A mapping from each keywords to its corresponding words in the lexicon
+	:rtype: dict(str,list(str))
+	""" 
+	lexicon = {}
+	with open(filename, "r", encoding="utf-8") as r:
+		for line in r.readlines():
+			words = line.lower().strip().split()
+			lexicon[words[0]] = [word for word in words[1:]]
+	return lexicon
+
+def retrofit(embeddings, word2int, lexicon, numIters):
+	"""
+	Retrofit word vectors to a lexicon
+
+	Modified from Faruqui et al.'s code at https://github.com/mfaruqui/retrofitting/retrofit.py
+
+	:param np.ndarray          embeddings: The word embeddings to be retrofitted
+	:param dict(str,int)         word2int: Mapping from a word to its index in embeddings
+
+	:param dict(str,list(str))   lexicon: Mapping from a word to a list of corresponding words (be they synonyms, paraphrases, hyponyms, etc.)
+	:param int                  numIters: The number of training iterations to perfrom
+
+	:returns: The retrofitted vectors
+	:rtype: dict(str,np.ndarray)
+	"""
+
+	#Added code
+	#Mapping from a word to its embedding
+	wordVecs = {word:embeddings[index] for (word, index) in word2int.items()}
+
+
+	newWordVecs = deepcopy(wordVecs)
+	wvVocab = set(newWordVecs.keys())
+	loopVocab = wvVocab.intersection(set(lexicon.keys()))
+	#print("size of loopVocab=", len(loopVocab))
+	for it in range(numIters):
+		#print("Iteration", it)
+		# loop through every node also in ontology (else just use data estimate)
+		for word in loopVocab:
+			wordNeighbours = set(lexicon[word]).intersection(wvVocab)
+			numNeighbours = len(wordNeighbours)
+			#no neighbours, pass - use data estimate
+			#print("\tneighbors of \"", word, "\":", wordNeighbours)
+			if numNeighbours == 0:
+				continue
+			# the weight of the data estimate if the number of neighbours
+			newVec = numNeighbours * wordVecs[word]
+			# loop over neighbours and add to new vector (currently with weight 1)
+			for ppWord in wordNeighbours:
+				newVec += newWordVecs[ppWord]
+			newWordVecs[word] = newVec/(2*numNeighbours)
+
+
+	#Added code
+	sorted_words = sorted(word2int, key=word2int.get)
+	#print(sorted_words[:5])
+	new_embeddings = np.stack( [newWordVecs[word] for word in sorted_words] )
+	for word in word2int:
+		assert np.all(newWordVecs[word] == new_embeddings[word2int[word]])
+	#print("All assertions passed")
+
+	return new_embeddings
+
+
 if __name__ == "__main__":
 	parser = create_parser()
 	args = parser.parse_args()
+
+	summation = sum(bool(option) for option in [args.w2v, args.retrofit, args.counterfit])
+	if summation != 1:
+		raise ValueError("You must choose exactly one of --w2v, --retrofit, or --counterfit")
 
 	word2int = {}
 	with open(args.vocab, "r", encoding="utf-8") as r:
@@ -175,13 +255,16 @@ if __name__ == "__main__":
 			[word, index] = line.split()
 			word2int[word] = int(index)
 
-	summation = sum(bool(option) for option in [args.w2v, args.retrofit, args.counterfit])
-	if summation != 1:
-		raise ValueError("You must choose exactly one of --w2v, --retrofit, or --counterfit")
 
 	if args.w2v:
 		with open(args.w2v, "r", encoding="utf-8") as r:
 			tokens = [line.split() for line in r.readlines()]
 		embeddings = w2vec(tokens, word2int, embedding_size=args.size) 
+	elif args.retrofit:
+
+		original_embeddings = np.load(args.retrofit[0])
+		lexicon = read_lexicon(args.retrofit[1])
+		embeddings = retrofit(original_embeddings, word2int, lexicon, numIters=10)
+
 	np.save(args.save_path, embeddings)
 
