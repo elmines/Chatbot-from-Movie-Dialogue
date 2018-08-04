@@ -198,6 +198,13 @@ class Seq2Seq(object):
 		return self._perplexity
 
 	@property
+	def optimizer(self):
+		"""
+		tf.train.Optimizer: The model's optimizer for descending gradients
+		"""
+		return self._optimizer
+
+	@property
 	def eval_mask(self):
 		"""
 		tf.Tensor: Mask of size [batch_size, max_target_sequence_length]
