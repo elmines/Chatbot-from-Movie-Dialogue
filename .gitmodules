@@ -4,3 +4,6 @@
 [submodule "analysis"]
 	path = analysis
 	url = https://github.com/elmines/EmotChatbotAnalyze.git
+[submodule "retrofitting"]
+	path = retrofitting
+	url = https://github.com/elmines/retrofitting.git
