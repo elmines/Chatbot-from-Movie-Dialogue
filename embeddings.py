@@ -15,6 +15,7 @@ import sklearn.decomposition
 
 #Local modules
 import match
+import counterfitting
 
 def create_parser():
 	parser = argparse.ArgumentParser(description="Generate word embeddings given a corpus and vocabulary")
@@ -160,7 +161,7 @@ def affect_append(embeddings, vocab2int, exclude=None, neutral=[5, 1, 5], verbos
 def khosla_affect_append(embeddings, word2int, exclude=None, neutral=[5, 1, 5], verbose=True):
 	"""
 	Injects affective information into existing embeddings using the approach
-	described Khosla et al. in  https://arxiv.org/abs/1805.07966
+	described by Khosla et al. in https://arxiv.org/abs/1805.07966
 
 	Khosla et al. use principal component analysis to reduce the embedding size
 	back to the size of the original embeddings.	
@@ -176,15 +177,8 @@ def khosla_affect_append(embeddings, word2int, exclude=None, neutral=[5, 1, 5], 
 	"""
 	vad_vals = _vad_vals(word2int, exclude=exclude, neutral=neutral, verbose=verbose)
 
-	lines = []
-	for key in word2int:
-		line = "{}-->{}".format(key, vad_vals[word2int[key]])
-		lines.append(line)
-	with open("out.txt", "w", encoding="utf-8") as w:
-		w.write( "\n".join(lines) )
-
-	normed_embeddings = embeddings / np.linalg.norm(embeddings, axis=-1)
-	normed_vad_vals   = vad_vals   / np.linalg.norm(vad_vals,   axis=-1)
+	normed_embeddings = embeddings / np.linalg.norm(embeddings, axis=0)
+	normed_vad_vals   = vad_vals   / np.linalg.norm(vad_vals, axis=0)
 	concatenated      = np.concatenate( (normed_embeddings, normed_vad_vals), axis=-1)
 	standardized      = _standardize(concatenated, axis=0)
 
@@ -201,7 +195,6 @@ def retrofit(embeddings, word2int, lexicon, numIters):
 
 	:param np.ndarray          embeddings: The word embeddings to be retrofitted
 	:param dict(str,int)         word2int: Mapping from a word to its index in embeddings
-
 	:param dict(str,list(str))   lexicon: Mapping from a word to a list of corresponding words (be they synonyms, paraphrases, hyponyms, etc.)
 	:param int                  numIters: The number of training iterations to perfrom
 
@@ -249,7 +242,7 @@ if __name__ == "__main__":
 	exclusive = [args.w2v, args.retrofit, args.counterfit, args.k_append, args.append]
 	summation = sum(bool(option) for option in exclusive)
 	if summation != 1:
-		raise ValueError("You must choose exactly one of --w2v, --retrofit, --counterfit, --k_append, or --append ")
+		raise ValueError("You must choose exactly one of --w2v, --retrofit, --counterfit, --k_append, or --append")
 
 	word2int = {}
 	with open(args.vocab, "r", encoding="utf-8") as r:
@@ -265,6 +258,9 @@ if __name__ == "__main__":
 		original_embeddings = np.load(args.retrofit[0])
 		lexicon = _read_lexicon(args.retrofit[1])
 		embeddings = retrofit(original_embeddings, word2int, lexicon, numIters=10)
+	elif args.counterfit:
+		original_embeddings = np.load(args.counterfit)
+		embeddings = counterfitting.counterfit(original_embeddings, word2int, rho=0.1)
 	elif args.k_append:
 		original_embeddings = np.load(args.k_append)
 		embeddings = khosla_affect_append(original_embeddings, word2int, neutral=args.neutral)
@@ -273,4 +269,5 @@ if __name__ == "__main__":
 		embeddings = affect_append(original_embeddings, word2int, neutral=args.neutral)
 
 	np.save(args.save_path, embeddings)
+	sys.stderr.write("Wrote generated embeddings to {}\n".format(args.save_path))
 
