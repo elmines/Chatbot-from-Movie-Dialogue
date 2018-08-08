@@ -260,7 +260,7 @@ if __name__ == "__main__":
 		embeddings = retrofit(original_embeddings, word2int, lexicon, numIters=10)
 	elif args.counterfit:
 		original_embeddings = np.load(args.counterfit)
-		embeddings = counterfitting.counterfit(original_embeddings, word2int, rho=0.1)
+		embeddings = counterfitting.counterfit(original_embeddings, word2int, rho=0.2)
 	elif args.k_append:
 		original_embeddings = np.load(args.k_append)
 		embeddings = khosla_affect_append(original_embeddings, word2int, neutral=args.neutral)

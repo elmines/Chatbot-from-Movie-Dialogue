@@ -3,7 +3,7 @@ Counterfit existing word embeddings to synonym and antonym constraints
 
 Modified from Nikola Mrkšić et al.'s approach at https://github.com/nmrksic/counter-fitting
 """
-import numpy
+import numpy as np
 import sys
 import random 
 import math
@@ -12,8 +12,6 @@ from copy import deepcopy
 from numpy.linalg import norm
 from numpy import dot
 
-#FIXME
-import time
 
 _constraints_dir = os.path.join("resources", "linguistic_constraints")
 """
@@ -53,15 +51,8 @@ def counterfit(embeddings, word2int, delta=1.0, gamma=0.0, rho=0.2, hyper_k1=0.1
 	current_iteration = 0
 	vsp_pairs = {}
 
-	vsp_start = time.time()
 	if hyper_k3 > 0.0: # if we need to compute the VSP terms.
  		vsp_pairs = compute_vsp_pairs(word_vectors, vocabulary, rho=rho)
-	vsp_end = time.time()
-	print("VSP loop duration:", vsp_end-vsp_start, "s")
-
-	with open("vsp_small.txt", "w", encoding="utf-8") as w:
-		lines = ["{}".format(pair) for pair in vsp_pairs]
-		w.write("\n".join(lines))
 	
 	# Post-processing: remove synonym pairs which are deemed to be both synonyms and antonyms:
 	for antonym_pair in antonyms:
@@ -72,21 +63,17 @@ def counterfit(embeddings, word2int, delta=1.0, gamma=0.0, rho=0.2, hyper_k1=0.1
 			del vsp_pairs[antonym_pair]
 			sys.stderr.write("Removed {} from vsp_pairs list.\n".format(antonym_pair))
 
-	max_iter = 1 #20
+	max_iter = 20
 	print("Antonym pairs:", len(antonyms), "Synonym pairs:", len(synonyms), "VSP pairs:", len(vsp_pairs), file=sys.stderr)
 	print("Running the optimisation procedure for", max_iter, "SGD steps...", file=sys.stderr)
 
-	sgd_start = time.time()
 	while current_iteration < max_iter:
 		current_iteration += 1
 		sys.stderr.write("\tStarting SGD step {}. . .\n".format(current_iteration))
 		word_vectors = one_step_SGD(word_vectors, synonyms, antonyms, vsp_pairs,
 					delta=delta, gamma=gamma, hyper_k1=hyper_k1, hyper_k2=hyper_k2, hyper_k3=hyper_k3)
-	sgd_end = time.time()
-	print("Duration of optimization loop:", sgd_end - sgd_start, "s")
 
 	sorted_vocab = sorted(vocabulary, key=word2int.get)
-	print("sorted_vocab =", sorted_vocab[:10])
 	counterfitted_embeddings = np.stack( [word_vectors[word] for word in sorted_vocab] )
 
 	return counterfitted_embeddings
@@ -184,8 +171,8 @@ def compute_vsp_pairs(word_vectors, vocabulary, rho=0.2):
 			right_translation = list_of_ranges[right_range][0]
 
 			# copy the word vectors of the current word ranges:
-			vectors_left = numpy.zeros((step_size, vector_size), dtype="float32")
-			vectors_right = numpy.zeros((step_size, vector_size), dtype="float32")
+			vectors_left = np.zeros((step_size, vector_size), dtype="float32")
+			vectors_right = np.zeros((step_size, vector_size), dtype="float32")
 
 			# two iterations as the two ranges need not be same length (implicit zero-padding):
 			full_left_range = range(list_of_ranges[left_range][0], list_of_ranges[left_range][1])		
@@ -201,7 +188,7 @@ def compute_vsp_pairs(word_vectors, vocabulary, rho=0.2):
 			dot_product = vectors_left.dot(vectors_right.T)
 
 			# find the indices of those word pairs whose dot product is above the threshold:
-			indices = numpy.where(dot_product >= threshold)
+			indices = np.where(dot_product >= threshold)
 
 			num_pairs = indices[0].shape[0]
 			left_indices = indices[0]
@@ -240,8 +227,8 @@ def vector_partial_gradient(u, v, normalised_vectors=True):
 	else:		
 		norm_u = norm(u)
 		norm_v = norm(v)
-		nominator = u * dot(u,v) - v * numpy.power(norm_u, 2)
-		denominator = norm_v * numpy.power(norm_u, 3)
+		nominator = u * dot(u,v) - v * np.power(norm_u, 2)
+		denominator = norm_v * np.power(norm_u, 3)
 		gradient = nominator / denominator
 
 	return gradient
