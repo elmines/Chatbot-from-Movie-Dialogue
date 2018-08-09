@@ -135,7 +135,7 @@ def w2vec(text, vocab2int, embedding_size=1024, verbose=True):
 	:rtype:   np.ndarray
 	"""
 	if verbose: sys.stderr.write("Learning Word2Vec embeddings on {} sequences . . .\n".format(len(text)))
-	model = gensim.models.Word2Vec(sentences=text, size=embedding_size, window=5, min_count=1, workers=4, sg=0)
+	model = gensim.models.Word2Vec(sentences=text, size=embedding_size, min_count=1, workers=4)
 
 	word_vecs = np.zeros( (len(vocab2int),embedding_size) )
 	for (word, index) in vocab2int.items():
@@ -253,7 +253,10 @@ if __name__ == "__main__":
 
 	if args.w2v:
 		with open(args.w2v, "r", encoding="utf-8") as r:
-			tokens = [line.split() for line in r.readlines()]
+			#TODO: Ensuring uniqueness should be done in another module
+			lines = set(r.readlines())	
+			sys.stderr.write("{} unique lines to use for learning Word2Vec embeddings.\n".format(len(lines)))
+			tokens = [line.split() for line in lines]
 		embeddings = w2vec(tokens, word2int, embedding_size=args.size) 
 	elif args.retrofit:
 		original_embeddings = np.load(args.retrofit[0])
