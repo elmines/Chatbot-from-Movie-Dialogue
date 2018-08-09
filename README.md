@@ -8,10 +8,11 @@ To generate some more expansive documentation, simply run [gen\_doc.sh](gen_doc.
 
 ## Dependencies
 - Python 3
-- [tensorflow](https://pypi.org/project/tensorflow/) 1.9
+- [tensorflow](https://pypi.org/project/tensorflow/) 1.9 or higher
 - [gensim](https://pypi.org/project/gensim/) (for training Word2Vec embeddings)
 - [PyYAML](https://pypi.org/project/PyYAML/) (for configuring a model)
 - [numpy](https://pypi.org/project/numpy/)
+- [sklearn](https://pypi.org/project/scikit-learn/) (for principal component analysis)
 - [pandas](https://pypi.org/project/pandas/) (for spreadsheet processing)
   - [xlrd](https://pypi.org/project/xlrd/) 
 - [spacy](https://pypi.org/project/spacy/) (for preprocessing package)

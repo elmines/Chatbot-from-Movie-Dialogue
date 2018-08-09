@@ -38,8 +38,6 @@ def create_parser():
 	return parser
 
 _VAD_spreadsheet = os.path.join("resources", "Warriner, Kuperman, Brysbaert - 2013 BRM-ANEW expanded.xlsx")
-if not os.path.exists(_VAD_spreadsheet):
-	raise OSError("{} was not found and is a required resource for generating affective embeddings.".format(_VAD_spreadsheet))
 
 def _vad_vals(vocab2int, exclude=None, neutral=[5, 1, 5], verbose=True):
 	"""
@@ -51,6 +49,9 @@ def _vad_vals(vocab2int, exclude=None, neutral=[5, 1, 5], verbose=True):
 	:returns: The VAD values (or the neutral vector) for each word in the vocabulary
 	:rtype:   np.ndarray
 	"""
+	if not os.path.exists(_VAD_spreadsheet):
+		raise OSError("{} was not found and is a required resource for generating affective embeddings.".format(_VAD_spreadsheet))
+
 	if len(neutral) != 3:
 		raise ValueError("The neutral VAD vector must have exactly 3 dimensions")
 

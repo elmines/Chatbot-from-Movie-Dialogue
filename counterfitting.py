@@ -42,9 +42,9 @@ def counterfit(embeddings, word2int, delta=1.0, gamma=0.0, rho=0.2, hyper_k1=0.1
 	antonyms = set()
 
 	for syn_filepath in synonym_files:
-		synonyms = synonyms | load_constraints(syn_filepath, vocabulary)
+		synonyms = synonyms | _load_constraints(syn_filepath, vocabulary)
 	for ant_filepath in antonym_files:
-		antonyms = antonyms | load_constraints(ant_filepath, vocabulary)
+		antonyms = antonyms | _load_constraints(ant_filepath, vocabulary)
 
 	word_vectors = {word:embeddings[word2int[word]] for word in vocabulary}
 	
@@ -52,7 +52,7 @@ def counterfit(embeddings, word2int, delta=1.0, gamma=0.0, rho=0.2, hyper_k1=0.1
 	vsp_pairs = {}
 
 	if hyper_k3 > 0.0: # if we need to compute the VSP terms.
- 		vsp_pairs = compute_vsp_pairs(word_vectors, vocabulary, rho=rho)
+ 		vsp_pairs = _compute_vsp_pairs(word_vectors, vocabulary, rho=rho)
 	
 	# Post-processing: remove synonym pairs which are deemed to be both synonyms and antonyms:
 	for antonym_pair in antonyms:
@@ -70,7 +70,7 @@ def counterfit(embeddings, word2int, delta=1.0, gamma=0.0, rho=0.2, hyper_k1=0.1
 	while current_iteration < max_iter:
 		current_iteration += 1
 		sys.stderr.write("\tStarting SGD step {}. . .\n".format(current_iteration))
-		word_vectors = one_step_SGD(word_vectors, synonyms, antonyms, vsp_pairs,
+		word_vectors = _one_step_SGD(word_vectors, synonyms, antonyms, vsp_pairs,
 					delta=delta, gamma=gamma, hyper_k1=hyper_k1, hyper_k2=hyper_k2, hyper_k3=hyper_k3)
 
 	sorted_vocab = sorted(vocabulary, key=word2int.get)
@@ -78,7 +78,7 @@ def counterfit(embeddings, word2int, delta=1.0, gamma=0.0, rho=0.2, hyper_k1=0.1
 
 	return counterfitted_embeddings
 
-def normalise_word_vectors(word_vectors, norm=1.0):
+def _normalise_word_vectors(word_vectors, norm=1.0):
 	"""
 	This method normalises the collection of word vectors provided in the word_vectors dictionary.
 
@@ -91,7 +91,7 @@ def normalise_word_vectors(word_vectors, norm=1.0):
 	return word_vectors
 
 
-def load_constraints(constraints_filepath, vocabulary):
+def _load_constraints(constraints_filepath, vocabulary):
 	"""
 	:param path-like contraints_filepath: Constraints .txt file of the format used at https://github.com/nmrksic/counter-fitting
 	:param list(str)          vocabulary: The words for which to search the lexicion
@@ -113,7 +113,7 @@ def load_constraints(constraints_filepath, vocabulary):
 	return constraints
 
 
-def distance(v1, v2, normalised_vectors=True):
+def _distance(v1, v2, normalised_vectors=True):
 	"""
 	Returns the cosine distance between two vectors. 
 	If the vectors are normalised, there is no need for the denominator, which is always one. 
@@ -128,7 +128,7 @@ def distance(v1, v2, normalised_vectors=True):
 		return 1 - dot(v1, v2) / ( norm(v1) * norm(v2) )
 
 
-def compute_vsp_pairs(word_vectors, vocabulary, rho=0.2):
+def _compute_vsp_pairs(word_vectors, vocabulary, rho=0.2):
 	"""
 	This method returns a dictionary with all word pairs which are closer together than rho.
 	Each pair maps to the original distance in the vector space. 
@@ -209,10 +209,10 @@ def compute_vsp_pairs(word_vectors, vocabulary, rho=0.2):
 	return vsp_pairs
 
 
-def vector_partial_gradient(u, v, normalised_vectors=True):
+def _vector_partial_gradient(u, v, normalised_vectors=True):
 	"""
-	This function returns the gradient of cosine distance: \frac{ \partial dist(u,v)}{ \partial u}
-	If they are both of norm 1 (we do full batch and we renormalise at every step), we can save some time.
+	This function returns the gradient of cosine distance.
+	If both vectors are of norm 1 (we do full batch and we renormalise at every step), we can save some time.
 
 	:param np.ndarray                  u: The first vector
 	:param np.ndarray                  v: The second vector
@@ -234,7 +234,7 @@ def vector_partial_gradient(u, v, normalised_vectors=True):
 	return gradient
 
 
-def one_step_SGD(word_vectors, synonym_pairs, antonym_pairs, vsp_pairs, delta=1.0, gamma=0.0, hyper_k1=0.1, hyper_k2=0.1, hyper_k3=0.1):
+def _one_step_SGD(word_vectors, synonym_pairs, antonym_pairs, vsp_pairs, delta=1.0, gamma=0.0, hyper_k1=0.1, hyper_k2=0.1, hyper_k3=0.1):
 	"""
 	This method performs a step of SGD to optimise the counterfitting cost function.
 
@@ -256,11 +256,11 @@ def one_step_SGD(word_vectors, synonym_pairs, antonym_pairs, vsp_pairs, delta=1.
 	# AR term:
 	for (word_i, word_j) in antonym_pairs:
 
-		current_distance = distance(new_word_vectors[word_i], new_word_vectors[word_j])
+		current_distance = _distance(new_word_vectors[word_i], new_word_vectors[word_j])
 
 		if current_distance < delta:
 	
-			gradient = vector_partial_gradient( new_word_vectors[word_i], new_word_vectors[word_j])
+			gradient = _vector_partial_gradient( new_word_vectors[word_i], new_word_vectors[word_j])
 			gradient = gradient * hyper_k1 
 
 			if word_i in gradient_updates:
@@ -273,11 +273,11 @@ def one_step_SGD(word_vectors, synonym_pairs, antonym_pairs, vsp_pairs, delta=1.
 	# SA term:
 	for (word_i, word_j) in synonym_pairs:
 
-		current_distance = distance(new_word_vectors[word_i], new_word_vectors[word_j])
+		current_distance = _distance(new_word_vectors[word_i], new_word_vectors[word_j])
 
 		if current_distance > gamma: 
 		
-			gradient = vector_partial_gradient(new_word_vectors[word_j], new_word_vectors[word_i])
+			gradient = _vector_partial_gradient(new_word_vectors[word_j], new_word_vectors[word_i])
 			gradient = gradient * hyper_k2 
 
 			if word_j in gradient_updates:
@@ -291,11 +291,11 @@ def one_step_SGD(word_vectors, synonym_pairs, antonym_pairs, vsp_pairs, delta=1.
 	for (word_i, word_j) in vsp_pairs:
 
 		original_distance = vsp_pairs[(word_i, word_j)]
-		new_distance = distance(new_word_vectors[word_i], new_word_vectors[word_j])
+		new_distance = _distance(new_word_vectors[word_i], new_word_vectors[word_j])
 		
 		if original_distance <= new_distance: 
 
-			gradient = vector_partial_gradient(new_word_vectors[word_i], new_word_vectors[word_j]) 
+			gradient = _vector_partial_gradient(new_word_vectors[word_i], new_word_vectors[word_j]) 
 			gradient = gradient * hyper_k3 
 
 			if word_i in gradient_updates:
@@ -310,5 +310,5 @@ def one_step_SGD(word_vectors, synonym_pairs, antonym_pairs, vsp_pairs, delta=1.
 		update_term = gradient_updates[word] / (update_count[word]) 
 		new_word_vectors[word] += update_term 
 		
-	return normalise_word_vectors(new_word_vectors)
+	return _normalise_word_vectors(new_word_vectors)
 
