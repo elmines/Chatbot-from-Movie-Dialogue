@@ -209,18 +209,20 @@ def retrofit(embeddings, word2int, lexicon, numIters):
 	newWordVecs = deepcopy(wordVecs)
 	wvVocab = set(newWordVecs.keys())
 	loopVocab = wvVocab.intersection(set(lexicon.keys()))
-	#print("size of loopVocab=", len(loopVocab))
+
+	sys.stderr.write("Retrofitting the embeddings of {} out of {} words\n".format(len(loopVocab), len(wvVocab)))
+	sys.stderr.write("Performing {} iterations . . .\n".format(numIters))
 	for it in range(numIters):
-		#print("Iteration", it)
+		sys.stderr.write("Starting iteration {} . . .\n".format(it+1))
 		# loop through every node also in ontology (else just use data estimate)
 		for word in loopVocab:
 			wordNeighbours = set(lexicon[word]).intersection(wvVocab)
 			numNeighbours = len(wordNeighbours)
+			sys.stderr.write("\"{}\" has {} neighbors\n".format(word, numNeighbours))
 			#no neighbours, pass - use data estimate
-			#print("\tneighbors of \"", word, "\":", wordNeighbours)
 			if numNeighbours == 0:
 				continue
-			# the weight of the data estimate if the number of neighbours
+			# the weight of the data estimate is the number of neighbours
 			newVec = numNeighbours * wordVecs[word]
 			# loop over neighbours and add to new vector (currently with weight 1)
 			for ppWord in wordNeighbours:
