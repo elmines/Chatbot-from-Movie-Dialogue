@@ -81,6 +81,7 @@ class Config(object):
 	:ivar float            learning_rate: The step size for gradient-based optimizers; default 0.0001
 	:ivar int                 beam_width: The number of beams to generate when doing decoding; default 1 (equivalent to greedy decoding)
 	:ivar float      gradient_clip_value: Magnitude used to clip gradients during learning, such that gradients are clipped to [-gradient_clip_value, gradient_clip_value]; default 5.0
+	:ivar int         max_stalled_steps: Maximum number of stalled validation steps before terminating training early; default 2**30
 	:ivar int                 max_epochs: Maximum number of epochs for training; default 10
 	:ivar int           train_batch_size: Minibatch size during training; default 64
 	:ivar int           infer_batch_size: Minibatch size during validation, testing, etc.; default 32
@@ -152,9 +153,10 @@ class Config(object):
 
 
 		#Training
-		_settings.append(Setting(      "max_epochs", int, lambda: 10))
-		_settings.append(Setting("train_batch_size", int, lambda: 64))
-		_settings.append(Setting("infer_batch_size", int, lambda: 32))
+		_settings.append(Setting("max_stalled_steps", int, lambda: 1 << 32))
+		_settings.append(Setting(       "max_epochs", int, lambda: 10))
+		_settings.append(Setting( "train_batch_size", int, lambda: 64))
+		_settings.append(Setting( "infer_batch_size", int, lambda: 32))
 
 
 		#Model loading and saving

@@ -216,7 +216,7 @@ class VADExp(BaseExperiment):
 			raise ValueError("Tried to train a model in inference mode.")
 		xent_epochs = self.config.max_epochs 
 
-		trainer = training.Trainer(self.save_fn, max_epochs=xent_epochs, max_stalled_steps=5)
+		trainer = training.Trainer(self.save_fn, max_epochs=xent_epochs, max_stalled_steps=self.config.max_stalled_steps)
 
 		with tf.Session() as sess:
 			if self.model_load:
@@ -289,7 +289,7 @@ class DistrExp(BaseExperiment):
 		if self.inference:
 			raise ValueError("Tried to train a model in inference mode.")
 		xent_epochs = self.config.max_epochs
-		trainer = training.Trainer(self.save_fn, max_epochs=xent_epochs, max_stalled_steps=5)
+		trainer = training.Trainer(self.save_fn, max_epochs=xent_epochs, max_stalled_steps=self.config.max_stalled_steps)
 
 		with tf.Session() as sess:
 			if self.model_load:
