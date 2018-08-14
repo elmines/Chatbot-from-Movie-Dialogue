@@ -23,13 +23,16 @@ def lemmatize(token):
 
 def vocab_match(prop_vocab, targ_vocab, verbose=False):
 	"""
-	:param list(str) prop_vocab: Our \"proposed\" vocabulary of words we want to map to targ_vocab
-	:param list(str) targ_vocab: The vocab to which we're matching
+	:param iterable(str) prop_vocab: Our \"proposed\" vocabulary of words we want to map to targ_vocab
+	:param iterable(str) targ_vocab: The vocab to which we're matching
 	:param bool         verbose: Print helpful messages to stderr
 	
 	:returns: A mapping from every word in prop_vocab to either a word in targ_vocab or None
 	:rtype: dict(str,str or None)
 	"""
+
+	prop_vocab = list(prop_vocab)
+	targ_vocab = list(targ_vocab)
 	
 	list_neutral = []
 	list_matched = []

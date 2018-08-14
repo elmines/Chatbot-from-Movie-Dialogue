@@ -176,15 +176,20 @@ def khosla_affect_append(embeddings, word2int, exclude=None, neutral=[5, 1, 5], 
 	:returns: The affective embeddings (of the same shape as the original embeddings)
 	:rtype:   np.ndarray
 	"""
+	sys.stderr.write("Mapping words to VAD values . . .\n")
 	vad_vals = _vad_vals(word2int, exclude=exclude, neutral=neutral, verbose=verbose)
 
+	sys.stderr.write("Normalizing semantic vectors . . .\n")
 	normed_embeddings = embeddings / np.linalg.norm(embeddings, axis=0)
+	sys.stderr.write("Normalizing VAD values . . .\n")
 	normed_vad_vals   = vad_vals   / np.linalg.norm(vad_vals, axis=0)
 	concatenated      = np.concatenate( (normed_embeddings, normed_vad_vals), axis=-1)
+	sys.stderr.write("Standardizing the embeddings . . .\n")
 	standardized      = _standardize(concatenated, axis=0)
 
 	#Reduce back to original embedding size
 	pca_model = sklearn.decomposition.PCA(embeddings.shape[-1])
+	sys.stderr.write("Using PCA to reduce the concatenated embeddings back to size {}\n".format(embeddings.shape[-1]))
 	reduced   = pca_model.fit_transform(standardized)
 	return reduced
 
@@ -208,7 +213,14 @@ def retrofit(embeddings, word2int, lexicon, numIters):
 
 	newWordVecs = deepcopy(wordVecs)
 	wvVocab = set(newWordVecs.keys())
-	loopVocab = wvVocab.intersection(set(lexicon.keys()))
+
+	sys.stderr.write("Mapping words in the source vocabulary to keys in the lexicon. . .\n")
+	sys.stderr.flush()
+	vocab2lex = match.vocab_match(wvVocab, lexicon.keys())
+	loopVocab = [word for word in vocab2lex.keys() if vocab2lex[word] is not None]
+	sys.stderr.write("Number of mappings found by identity: {}\n".format(len(wvVocab.intersection(lexicon.keys()))))
+	sys.stderr.write("Total number of mappings found:       {}\n".format(len(loopVocab)))
+
 
 	sys.stderr.write("Retrofitting the embeddings of {} out of {} words\n".format(len(loopVocab), len(wvVocab)))
 	sys.stderr.write("Performing {} iterations . . .\n".format(numIters))
@@ -216,7 +228,7 @@ def retrofit(embeddings, word2int, lexicon, numIters):
 		sys.stderr.write("Starting iteration {} . . .\n".format(it+1))
 		# loop through every node also in ontology (else just use data estimate)
 		for word in loopVocab:
-			wordNeighbours = set(lexicon[word]).intersection(wvVocab)
+			wordNeighbours = set(lexicon[vocab2lex[word]]).intersection(wvVocab)
 			numNeighbours = len(wordNeighbours)
 			sys.stderr.write("\"{}\" has {} neighbors\n".format(word, numNeighbours))
 			#no neighbours, pass - use data estimate
