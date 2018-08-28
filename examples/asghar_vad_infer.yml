@@ -2,10 +2,9 @@
 arch             : vad
 
 #Yes, for now sadly we still have to reload resources like embeddings and vocabulary during inference
-embeddings       : word_Vecs_VAD.npy
+embeddings       : asghar_vad_append.npy
 vocab            : corpora/vocab.txt
 unk              : <UNK>
-rnn_size         : 512 
 
 model_load       : examples/models/infer_model.ckpt-1 #Make sure to load the file for the inference graph, not the training one
 infer_sheet      : examples/test_set_short.xlsx

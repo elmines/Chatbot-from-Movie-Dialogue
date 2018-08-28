@@ -1,9 +1,0 @@
-arch          : vad
-embeddings    : word_Vecs_VAD.npy
-train_save    : examples/models/train_model.ckpt
-infer_save    : examples/models/infer_model.ckpt
-rnn_size      : 512
-vocab         : corpora/vocab.txt
-corpora       : [corpora/train_prompts.txt, corpora/train_answers.txt]
-valid_corpora : [corpora/valid_prompts.txt, corpora/valid_answers.txt]
-unk           : <UNK>

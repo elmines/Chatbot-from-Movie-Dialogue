@@ -2,5 +2,5 @@
 
 ORIG_DIR=`pwd`
 cd ..
-python train.py $ORIG_DIR/distr_train.yml
+python infer.py $ORIG_DIR/asghar_vad_infer.yml
 cd $ORIG_DIR
